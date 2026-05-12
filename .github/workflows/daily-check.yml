@@ -44,7 +44,7 @@ jobs:
         with:
           name: TICKERS
           value: ${{ github.event.inputs.tickers }}
-          github_token: ${{ secrets.PAT }}
+          pa_token: ${{ secrets.PAT }}
 
       - name: Update THRESHOLD secret
         if: github.event.inputs.threshold != ''
@@ -52,7 +52,7 @@ jobs:
         with:
           name: THRESHOLD
           value: ${{ github.event.inputs.threshold }}
-          github_token: ${{ secrets.PAT }}
+          pa_token: ${{ secrets.PAT }}
 
       - name: Update LOOKBACK secret
         if: github.event.inputs.lookback != ''
@@ -60,9 +60,10 @@ jobs:
         with:
           name: LOOKBACK
           value: ${{ github.event.inputs.lookback }}
-          github_token: ${{ secrets.PAT }}
+          pa_token: ${{ secrets.PAT }}
 
   check:
+    needs: update-secrets          # 让 update-secrets 先跑完（若跳过则直接运行）
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
