@@ -8,7 +8,7 @@ on:
       tickers:
         description: "Comma-separated tickers (leave blank to use secret)"
         required: false
-        default: ""       
+        default: ""
       threshold:
         description: "Minimum trade size in USD (leave blank to use secret)"
         required: false
@@ -17,6 +17,11 @@ on:
         description: "Days to look back (leave blank to use secret)"
         required: false
         default: ""
+      update_config:
+        description: "Update cronjob default config? (saves tickers/threshold/lookback as secrets for future scheduled runs)"
+        type: boolean
+        required: false
+        default: false
 
 env:
   DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -24,12 +29,39 @@ env:
   DING_WEBHOOK_SIGN: ${{ secrets.DING_WEBHOOK_SIGN }}
   SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
   SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
-
   TICKERS: ${{ github.event.inputs.tickers || secrets.TICKERS }}
   THRESHOLD_USD: ${{ github.event.inputs.threshold || secrets.THRESHOLD }}
   LOOKBACK_DAYS: ${{ github.event.inputs.lookback || secrets.LOOKBACK }}
 
 jobs:
+  update-secrets:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.update_config == 'true'
+    steps:
+      - name: Update TICKERS secret
+        if: github.event.inputs.tickers != ''
+        uses: gliech/create-github-secret-action@v1
+        with:
+          name: TICKERS
+          value: ${{ github.event.inputs.tickers }}
+          pa_token: ${{ secrets.PAT }}
+
+      - name: Update THRESHOLD secret
+        if: github.event.inputs.threshold != ''
+        uses: gliech/create-github-secret-action@v1
+        with:
+          name: THRESHOLD
+          value: ${{ github.event.inputs.threshold }}
+          pa_token: ${{ secrets.PAT }}
+
+      - name: Update LOOKBACK secret
+        if: github.event.inputs.lookback != ''
+        uses: gliech/create-github-secret-action@v1
+        with:
+          name: LOOKBACK
+          value: ${{ github.event.inputs.lookback }}
+          pa_token: ${{ secrets.PAT }}
+
   check:
     runs-on: ubuntu-latest
     steps:
