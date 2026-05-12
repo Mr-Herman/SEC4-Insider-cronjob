@@ -1,4 +1,4 @@
-Name: Daily Insider Check
+name: Daily Insider Check
 
 on:
   schedule:
