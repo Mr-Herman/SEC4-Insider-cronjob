@@ -2,7 +2,7 @@ name: Daily Insider Check
 
 on:
   schedule:
-    - cron: "0 16 * * *"                 # 每天 UTC 16:00（北京时间 0:00）运行
+    - cron: "0 16 * * *"
   workflow_dispatch:
     inputs:
       tickers:
@@ -18,7 +18,7 @@ on:
         required: false
         default: ""
       update_config:
-        description: "Update cronjob default config? (saves provided values as secrets for future scheduled runs)"
+        description: "Update cronjob default config? (saves provided values as secrets)"
         type: boolean
         required: false
         default: false
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.update_config == 'true'
     steps:
-      - name: Update TICKERS secret (only if provided)
+      - name: Update TICKERS secret
         if: github.event.inputs.tickers != ''
         uses: gliech/create-github-secret-action@v1
         with:
@@ -46,7 +46,7 @@ jobs:
           value: ${{ github.event.inputs.tickers }}
           pa_token: ${{ secrets.PAT }}
 
-      - name: Update THRESHOLD secret (only if provided)
+      - name: Update THRESHOLD secret
         if: github.event.inputs.threshold != ''
         uses: gliech/create-github-secret-action@v1
         with:
@@ -54,7 +54,7 @@ jobs:
           value: ${{ github.event.inputs.threshold }}
           pa_token: ${{ secrets.PAT }}
 
-      - name: Update LOOKBACK secret (only if provided)
+      - name: Update LOOKBACK secret
         if: github.event.inputs.lookback != ''
         uses: gliech/create-github-secret-action@v1
         with:
@@ -64,7 +64,7 @@ jobs:
 
   check:
     runs-on: ubuntu-latest
-    needs: update-secrets     # 确保 secrets 先更新完再跑（若跳过则直接跑）
+    needs: update-secrets   # 先更新 secret（若跳过则直接往下）
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
