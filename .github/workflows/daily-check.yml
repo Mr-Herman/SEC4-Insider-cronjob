@@ -44,7 +44,7 @@ jobs:
         with:
           name: TICKERS
           value: ${{ github.event.inputs.tickers }}
-          pa_token: ${{ secrets.PAT }}
+          github_token: ${{ secrets.PAT }}
 
       - name: Update THRESHOLD secret
         if: github.event.inputs.threshold != ''
@@ -52,7 +52,7 @@ jobs:
         with:
           name: THRESHOLD
           value: ${{ github.event.inputs.threshold }}
-          pa_token: ${{ secrets.PAT }}
+          github_token: ${{ secrets.PAT }}
 
       - name: Update LOOKBACK secret
         if: github.event.inputs.lookback != ''
@@ -60,7 +60,7 @@ jobs:
         with:
           name: LOOKBACK
           value: ${{ github.event.inputs.lookback }}
-          pa_token: ${{ secrets.PAT }}
+          github_token: ${{ secrets.PAT }}
 
   check:
     runs-on: ubuntu-latest
