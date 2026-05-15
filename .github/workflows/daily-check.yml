@@ -2,7 +2,7 @@ name: Daily Insider Check
 
 on:
   schedule:
-    - cron: "13 9 * * *"
+    - cron: "0 4 * * *"
   workflow_dispatch:
     inputs:
       tickers:
