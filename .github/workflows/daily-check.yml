@@ -2,7 +2,8 @@ name: Daily Insider Check
 
 on:
   schedule:
-    - cron: "0 1 * * *"
+    # 每天 UTC 06:00 运行（对应新西兰冬令时 NZST 18:00 / 下午 6 点）
+    - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
       tickers:
