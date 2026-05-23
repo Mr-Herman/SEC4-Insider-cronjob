@@ -312,7 +312,6 @@ public class StockInsiderBot {
     }
 
     // ==================== 通知构建 ====================
-
     private static String buildGroupedNotification(
             Map<String, List<AlertEntry>> alertsByTicker,
             String indexDate,
@@ -321,111 +320,97 @@ public class StockInsiderBot {
             int processedCount,
             int failedCount,
             List<String> unmappedTickers) {
-
+    
         int tickerCount = alertsByTicker.size();
         int tradeCount = alertsByTicker.values().stream().mapToInt(List::size).sum();
         double totalAmount = alertsByTicker.values().stream()
                 .flatMap(List::stream)
                 .mapToDouble(e -> e.amount)
                 .sum();
-
+    
         StringBuilder msg = new StringBuilder();
-
-        msg.append("🔔 **内部人交易警报**\n\n");
+    
         msg.append("📅 报告日期：").append(formatDate(indexDate)).append("\n");
         msg.append("🔎 扫描范围：最近 ").append(lookbackDays).append(" 天\n");
         msg.append("💰 提醒阈值：≥ ").append(formatAmount(minimumUsd)).append("\n");
         msg.append("📄 已处理 Form 4：").append(processedCount).append(" 份\n");
-
+    
         if (failedCount > 0) {
             msg.append("⚠️ 处理失败：").append(failedCount).append(" 份\n");
         }
-
+    
         if (unmappedTickers != null && !unmappedTickers.isEmpty()) {
             msg.append("⚠️ 未映射股票：").append(String.join(", ", unmappedTickers)).append("\n");
         }
-
+    
         msg.append("📊 命中结果：")
                 .append(tickerCount).append(" 个股票，")
                 .append(tradeCount).append(" 笔交易，合计 ")
                 .append(formatAmount(totalAmount))
                 .append("\n\n");
-
-        msg.append("━━━━━━━━━━━━━━━━━━━━\n\n");
-
-        boolean firstTicker = true;
-
+    
         for (Map.Entry<String, List<AlertEntry>> entry : alertsByTicker.entrySet()) {
             String ticker = entry.getKey();
             List<AlertEntry> entries = new ArrayList<>(entry.getValue());
-
+    
             entries.sort(Comparator
                     .comparing((AlertEntry e) -> "BUY".equals(e.type) ? 0 : 1)
                     .thenComparing((AlertEntry e) -> -e.amount));
-
+    
             long buyCount = entries.stream().filter(e -> "BUY".equals(e.type)).count();
             long sellCount = entries.stream().filter(e -> "SELL".equals(e.type)).count();
             double tickerAmount = entries.stream().mapToDouble(e -> e.amount).sum();
-
-            if (!firstTicker) {
-                msg.append("\n━━━━━━━━━━━━━━━━━━━━\n\n");
-            }
-            firstTicker = false;
-
+    
             msg.append("## ").append(ticker).append("\n");
             msg.append("合计：")
                     .append(entries.size()).append(" 笔，")
                     .append(formatAmount(tickerAmount))
                     .append(" ｜ 买入 ").append(buyCount)
                     .append(" ｜ 卖出 ").append(sellCount)
-                    .append("\n\n");
-
+                    .append("\n");
+    
             for (AlertEntry e : entries) {
                 boolean isBuy = "BUY".equals(e.type);
-
+    
                 String actionText = isBuy ? "买入" : "卖出";
                 String actionIcon = isBuy ? "🔴" : "🟢";
                 String date = e.transactionDate == null || e.transactionDate.isBlank()
                         ? "N/A"
                         : formatDate(e.transactionDate);
-
+    
                 String sharesStr = formatNumber(e.shares);
                 String amountStr = formatAmount(e.amount);
                 String priceStr = "$" + String.format("%,.2f", e.price);
                 String ownedAfter = e.sharesOwnedAfter > 0 ? formatNumber(e.sharesOwnedAfter) : "N/A";
                 String position = translatePosition(e.position);
-
+    
                 msg.append(actionIcon)
                         .append(" **").append(actionText)
                         .append(" ").append(amountStr)
                         .append("**");
-
+    
                 if (e.is10b51) {
                     msg.append(" `10b5-1计划交易`");
                 }
-
+    
                 msg.append("\n");
-
-                msg.append("> 日期：").append(date).append("\n");
-                msg.append("> 人员：").append(safeText(e.ownerName, "Unknown Owner")).append("\n");
-                msg.append("> 职位：").append(position).append("\n");
-                msg.append("> 数量：").append(sharesStr)
-                        .append(" 股 @ ").append(priceStr).append("\n");
-                msg.append("> 交易后持股：").append(ownedAfter).append("\n");
-
+                msg.append("日期：").append(date).append("\n");
+                msg.append("人员：").append(safeText(e.ownerName, "Unknown Owner")).append("\n");
+                msg.append("职位：").append(position).append("\n");
+                msg.append("数量：").append(sharesStr).append(" 股 @ ").append(priceStr).append("\n");
+                msg.append("交易后持股：").append(ownedAfter).append("\n");
+    
                 if (e.security != null && !e.security.isBlank() && !"stock".equalsIgnoreCase(e.security)) {
-                    msg.append("> 证券类型：").append(e.security).append("\n");
+                    msg.append("证券类型：").append(e.security).append("\n");
                 }
-
-                msg.append("\n");
             }
         }
-
+    
         msg.append("说明：P = Purchase 买入，S = Sale 卖出；10b5-1 表示预设交易计划。");
-
+    
         return msg.toString().trim();
     }
-
+    
     private static String buildNoAlertNotification(
             String[] tickers,
             List<String> unmappedTickers,
@@ -1350,10 +1335,13 @@ public class StockInsiderBot {
     private static boolean sendDingTalkWebhook(String webhookUrl, String secret, String title, String message) {
         try {
             String signedUrl = buildDingTalkUrl(webhookUrl, secret);
-            String markdown = "### " + title + "\n\n" + message;
+    
+            // 钉钉标题只显示一次，并在标题前加 🔔
+            String markdown = "### 🔔 " + title + "\n\n" + message;
+    
             String payload = "{\"msgtype\":\"markdown\",\"markdown\":{\"title\":\""
                     + escapeJson(title) + "\",\"text\":\"" + escapeJson(markdown) + "\"}}";
-
+    
             HttpClient client = HttpClient.newBuilder().connectTimeout(HTTP_TIMEOUT).build();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(signedUrl))
@@ -1361,25 +1349,25 @@ public class StockInsiderBot {
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(payload))
                     .build();
-
+    
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             String body = response.body() == null ? "" : response.body();
-
+    
             boolean success = response.statusCode() >= 200
                     && response.statusCode() < 300
                     && body.replace(" ", "").contains("\"errcode\":0");
-
+    
             if (!success) {
                 System.err.println("Warning: DingTalk notification failed. status="
                         + response.statusCode() + " body=" + body);
             }
-
+    
             return success;
         } catch (Exception e) {
             System.err.println("Warning: failed to send DingTalk notification: " + e.getMessage());
             return false;
         }
-    }
+    }    
 
     private static String buildDingTalkUrl(String webhookUrl, String secret) throws Exception {
         if (secret == null || secret.isBlank()) {
