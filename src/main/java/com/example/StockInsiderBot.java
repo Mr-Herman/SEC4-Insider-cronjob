@@ -321,6 +321,8 @@ public class StockInsiderBot {
             int failedCount,
             List<String> unmappedTickers) {
     
+        final String BR = "  \n";
+    
         int tickerCount = alertsByTicker.size();
         int tradeCount = alertsByTicker.values().stream().mapToInt(List::size).sum();
         double totalAmount = alertsByTicker.values().stream()
@@ -330,17 +332,17 @@ public class StockInsiderBot {
     
         StringBuilder msg = new StringBuilder();
     
-        msg.append("📅 报告日期：").append(formatDate(indexDate)).append("\n");
-        msg.append("🔎 扫描范围：最近 ").append(lookbackDays).append(" 天\n");
-        msg.append("💰 提醒阈值：≥ ").append(formatAmount(minimumUsd)).append("\n");
-        msg.append("📄 已处理 Form 4：").append(processedCount).append(" 份\n");
+        msg.append("📅 报告日期：").append(formatDate(indexDate)).append(BR);
+        msg.append("🔎 扫描范围：最近 ").append(lookbackDays).append(" 天").append(BR);
+        msg.append("💰 提醒阈值：≥ ").append(formatAmount(minimumUsd)).append(BR);
+        msg.append("📄 已处理 Form 4：").append(processedCount).append(" 份").append(BR);
     
         if (failedCount > 0) {
-            msg.append("⚠️ 处理失败：").append(failedCount).append(" 份\n");
+            msg.append("⚠️ 处理失败：").append(failedCount).append(" 份").append(BR);
         }
     
         if (unmappedTickers != null && !unmappedTickers.isEmpty()) {
-            msg.append("⚠️ 未映射股票：").append(String.join(", ", unmappedTickers)).append("\n");
+            msg.append("⚠️ 未映射股票：").append(String.join(", ", unmappedTickers)).append(BR);
         }
     
         msg.append("📊 命中结果：")
@@ -367,7 +369,7 @@ public class StockInsiderBot {
                     .append(formatAmount(tickerAmount))
                     .append(" ｜ 买入 ").append(buyCount)
                     .append(" ｜ 卖出 ").append(sellCount)
-                    .append("\n");
+                    .append(BR);
     
             for (AlertEntry e : entries) {
                 boolean isBuy = "BUY".equals(e.type);
@@ -393,15 +395,15 @@ public class StockInsiderBot {
                     msg.append(" `10b5-1计划交易`");
                 }
     
-                msg.append("\n");
-                msg.append("日期：").append(date).append("\n");
-                msg.append("人员：").append(safeText(e.ownerName, "Unknown Owner")).append("\n");
-                msg.append("职位：").append(position).append("\n");
-                msg.append("数量：").append(sharesStr).append(" 股 @ ").append(priceStr).append("\n");
-                msg.append("交易后持股：").append(ownedAfter).append("\n");
+                msg.append(BR);
+                msg.append("日期：").append(date).append(BR);
+                msg.append("人员：").append(safeText(e.ownerName, "Unknown Owner")).append(BR);
+                msg.append("职位：").append(position).append(BR);
+                msg.append("数量：").append(sharesStr).append(" 股 @ ").append(priceStr).append(BR);
+                msg.append("交易后持股：").append(ownedAfter).append(BR);
     
                 if (e.security != null && !e.security.isBlank() && !"stock".equalsIgnoreCase(e.security)) {
-                    msg.append("证券类型：").append(e.security).append("\n");
+                    msg.append("证券类型：").append(e.security).append(BR);
                 }
             }
         }
