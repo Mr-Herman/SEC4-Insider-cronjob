@@ -115,7 +115,7 @@ public class StockInsiderBot {
                 String msg = "No Form 4 filings found for " + String.join(", ", tickers) + " in the last "
                         + maxLookbackDays + " days.";
                 System.out.println(msg);
-                sendNotification(buildMissingNotification(tickers, "No Form 4 filings found"));
+                sendNotification(buildMissingNotification(tickers, "未找到内幕交易报告"));
                 return;
             }
 
@@ -153,7 +153,7 @@ public class StockInsiderBot {
             }
 
             if (filteredAlerts.isEmpty()) {
-                String noTradeMsg = "📭 No insider transactions found today.";
+                String noTradeMsg = "📭 今日未发现内幕交易。";
                 System.out.println(noTradeMsg);
                 sendNotification(noTradeMsg);
                 return;
@@ -175,7 +175,7 @@ public class StockInsiderBot {
             if (!errorMsg.contains("No Form 4 filings found") &&
                     !errorMsg.contains("No large insider transactions found") &&
                     !errorMsg.contains("No valid CIKs found")) {
-                sendErrorNotification("Insider Bot Error: " + errorMsg);
+                sendErrorNotification("内部人交易机器人错误: " + errorMsg);
             }
             System.exit(1);
         }
@@ -209,7 +209,7 @@ public class StockInsiderBot {
 
     private static String buildGroupedNotification(Map<String, List<AlertEntry>> alertsByTicker, String indexDate) {
         StringBuilder msg = new StringBuilder();
-        msg.append("⏰ Insider Alerts (").append(indexDate).append(")\n\n");
+        msg.append("🔔 内部人交易警报 (").append(indexDate).append(")\n\n");
 
         boolean isFirstTicker = true;
         for (Map.Entry<String, List<AlertEntry>> entry : alertsByTicker.entrySet()) {
@@ -249,7 +249,7 @@ public class StockInsiderBot {
                 }
                 msg.append("\n");
 
-                msg.append("  ").append(sharesStr).append(" @ **$")
+                msg.append("  ").append(sharesStr).append(" 股 @ **$")
                         .append(String.format("%,.2f", e.price))
                         .append("** · 持仓 ").append(positionStr).append("\n\n");
             }
@@ -276,7 +276,7 @@ public class StockInsiderBot {
 
     private static String buildMissingNotification(String[] tickers, String reason) {
         StringBuilder msg = new StringBuilder();
-        msg.append("🔔 Insider Alerts\n\n");
+        msg.append("🔔 内部人交易警报\n\n");
         for (String ticker : tickers) {
             msg.append("▶ ").append(ticker).append("\n  ").append(reason).append("\n\n");
         }
@@ -824,7 +824,7 @@ public class StockInsiderBot {
         String dingTalkUrl = System.getenv("DING_WEBHOOK_URL");
         if (dingTalkUrl != null && !dingTalkUrl.isBlank()) {
             String dingTalkSecret = System.getenv("DING_WEBHOOK_SIGN");
-            return sendDingTalkWebhook(dingTalkUrl, dingTalkSecret, "Insider Alert", message);
+            return sendDingTalkWebhook(dingTalkUrl, dingTalkSecret, "内部人交易警报", message);
         }
 
         String discordUrl = System.getenv("DISCORD_WEBHOOK_URL");
@@ -837,7 +837,7 @@ public class StockInsiderBot {
         String dingTalkUrl = System.getenv("DING_WEBHOOK_URL");
         if (dingTalkUrl != null && !dingTalkUrl.isBlank()) {
             String dingTalkSecret = System.getenv("DING_WEBHOOK_SIGN");
-            sendDingTalkWebhook(dingTalkUrl, dingTalkSecret, "Insider Bot Error", errorMessage);
+            sendDingTalkWebhook(dingTalkUrl, dingTalkSecret, "内部人交易机器人错误", errorMessage);
             return;
         }
 
