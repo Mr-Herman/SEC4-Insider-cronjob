@@ -1,3 +1,9 @@
+导致漏报的核心原因在于 **Jackson XML 解析器的一个底层特性（或者说是坑）**：
+在 SEC Form 4 的 XML 文件中，如果某个标签带有属性（例如 <transactionCode id="F1">P</transactionCode>），Jackson 会将其解析为一个 JSON Object {"id": "F1", "": "P"}，而不是单纯的字符串 "P"。
+此时原代码直接调用 .asText() 会返回空字符串 ""。由于 transactionCode 提取为空，或者 shares / price 提取失败（变为 0），导致这笔高达数百万美元的买入记录在 if (!"P".equalsIgnoreCase(code)) 或 if (amount < minimumUsd) 时被直接丢弃了。另外，有些 10% Owner / 信托持股人并未勾选 isOfficer，也会被误杀。
+我重写了底层的 extractText、extractLong 和 extractDouble 函数，增加了对空键 ""（Jackson 存储带属性文本的方式）的提取逻辑，并且放宽了内部人士判定（将 10% Owner 和 Trust 囊括在内）。
+以下是修好且未更改其他任何无关逻辑的完整代码，请直接替换：
+```java
 package com.example;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -553,18 +559,17 @@ public class StockInsiderBot {
         XmlMapper mapper = new XmlMapper();
         JsonNode root = mapper.readTree(xmlPayload);
         JsonNode issuer = root.path("issuer");
-        String rawXmlCik = issuer.path("issuerCik").asText(issuer.path("issuerCIK").asText("Unknown"));
+        String rawXmlCik = extractText(issuer, "issuerCik", extractText(issuer, "issuerCIK", "Unknown"));
         String normalizedXmlCik = rawXmlCik.replaceFirst("^0+(?!$)", "");
         String ticker = cikToRequestedTicker.getOrDefault(normalizedXmlCik,
-                issuer.path("issuerTradingSymbol").asText("Unknown"));
+                extractText(issuer, "issuerTradingSymbol", "Unknown"));
 
-        // 核心修复：处理多报告人（Array）的情况
         JsonNode reportingOwnerNode = root.path("reportingOwner");
         JsonNode primaryOwner = reportingOwnerNode;
         if (reportingOwnerNode.isArray()) {
             boolean found = false;
             for (JsonNode node : reportingOwnerNode) {
-                if (isOfficerOrDirector(node)) {
+                if (isValidReporter(node)) {
                     primaryOwner = node;
                     found = true;
                     break;
@@ -575,11 +580,12 @@ public class StockInsiderBot {
             }
         }
 
-        if (!isOfficerOrDirector(primaryOwner)) {
-            logDebug("Skipping Form 4 for " + ticker + " - reporter is not an officer/director.");
+        if (!isValidReporter(primaryOwner)) {
+            logDebug("Skipping Form 4 for " + ticker + " - reporter is not a valid insider/officer/director.");
             return alerts;
         }
-        String ownerName = primaryOwner.path("reportingOwnerId").path("rptOwnerName").asText("Unknown Owner");
+        
+        String ownerName = extractText(primaryOwner, "reportingOwnerId.rptOwnerName", "Unknown Owner");
         String position = extractPosition(primaryOwner);
 
         JsonNode nonDeriv = root.path("nonDerivativeTable");
@@ -599,66 +605,56 @@ public class StockInsiderBot {
                     if (entry != null)
                         alerts.computeIfAbsent(ticker, k -> new ArrayList<>()).add(entry);
                 }
-            } else
+            } else {
                 logDebug("No non-derivativeTransaction for " + ticker);
-        } else
+            }
+        } else {
             logDebug("No non-derivativeTable for " + ticker);
+        }
 
         alerts.putIfAbsent(ticker, new ArrayList<>());
         return alerts;
     }
 
-    private static boolean isOfficerOrDirector(JsonNode reportingOwner) {
-        JsonNode rel = reportingOwner.path("reportingOwnerRelationship");
-        if (rel.isMissingNode())
-            return false;
-        String isDirector = rel.path("isDirector").asText();
-        String isOfficer = rel.path("isOfficer").asText();
-        if ("true".equalsIgnoreCase(isDirector) || "1".contentEquals(isDirector) ||
-            "true".equalsIgnoreCase(isOfficer) || "1".contentEquals(isOfficer)) {
+    private static boolean isValidReporter(JsonNode reportingOwner) {
+        String isDir = extractText(reportingOwner, "reportingOwnerRelationship.isDirector", "false");
+        String isOff = extractText(reportingOwner, "reportingOwnerRelationship.isOfficer", "false");
+        String isTen = extractText(reportingOwner, "reportingOwnerRelationship.isTenPercentOwner", "false");
+        String isOth = extractText(reportingOwner, "reportingOwnerRelationship.isOther", "false");
+
+        if ("true".equalsIgnoreCase(isDir) || "1".equals(isDir) ||
+            "true".equalsIgnoreCase(isOff) || "1".equals(isOff) ||
+            "true".equalsIgnoreCase(isTen) || "1".equals(isTen) ||
+            "true".equalsIgnoreCase(isOth) || "1".equals(isOth)) {
             return true;
         }
-        // Fallback title check
-        JsonNode title = rel.path("officerTitle");
-        if (!title.isMissingNode() && !title.asText().isBlank()) {
+        if (!extractText(reportingOwner, "reportingOwnerRelationship.officerTitle", "").isBlank()) {
             return true;
         }
         return false;
     }
 
     private static String extractPosition(JsonNode reportingOwner) {
-        JsonNode rel = reportingOwner.path("reportingOwnerRelationship");
         List<String> titles = new ArrayList<>();
-        if (!rel.isMissingNode()) {
-            appendIfPresent(rel, "officerTitle", titles);
-            appendIfPresent(rel, "directorTitle", titles);
-            appendIfPresent(rel, "otherTitle", titles);
-            if (!titles.isEmpty())
-                return String.join(", ", titles);
-        }
-        String[] fallbacks = { "relationshipTitle", "reportingOwnerId.rptOwnerTitle" };
-        for (String path : fallbacks) {
-            String val = pathValue(reportingOwner, path);
-            if (val != null && !val.isBlank())
-                return val;
-        }
+        String off = extractText(reportingOwner, "reportingOwnerRelationship.officerTitle", "");
+        if (!off.isBlank()) titles.add(off);
+
+        String dir = extractText(reportingOwner, "reportingOwnerRelationship.directorTitle", "");
+        if (!dir.isBlank()) titles.add(dir);
+
+        String oth = extractText(reportingOwner, "reportingOwnerRelationship.otherTitle", "");
+        if (!oth.isBlank()) titles.add(oth);
+
+        if (!titles.isEmpty())
+            return String.join(", ", titles);
+
+        String rel = extractText(reportingOwner, "reportingOwnerRelationship.relationshipTitle", "");
+        if (!rel.isBlank()) return rel;
+
+        String rpt = extractText(reportingOwner, "reportingOwnerId.rptOwnerTitle", "");
+        if (!rpt.isBlank()) return rpt;
+
         return "Unknown Position";
-    }
-
-    private static void appendIfPresent(JsonNode rel, String field, List<String> titles) {
-        JsonNode node = rel.path(field);
-        if (!node.isMissingNode() && !node.asText().isBlank())
-            titles.add(node.asText().trim());
-    }
-
-    private static String pathValue(JsonNode root, String path) {
-        JsonNode node = root;
-        for (String part : path.split("\\.")) {
-            node = node.path(part);
-            if (node.isMissingNode())
-                return null;
-        }
-        return node.asText(null);
     }
 
     private static AlertEntry processTransaction(JsonNode transaction, String ownerName, String position,
@@ -672,7 +668,11 @@ public class StockInsiderBot {
         }
 
         long shares = extractLong(transaction, "transactionAmounts.transactionShares");
+        if (shares <= 0) shares = extractLong(transaction, "transactionShares");
+
         double price = extractDouble(transaction, "transactionAmounts.transactionPricePerShare");
+        if (price <= 0) price = extractDouble(transaction, "transactionPricePerShare");
+
         if (shares <= 0 || price <= 0) {
             if (debugEnabled)
                 logDebug("Skipping transaction: code=" + code + " shares=" + shares + " price=" + price);
@@ -708,46 +708,71 @@ public class StockInsiderBot {
                 sharesOwnedAfter);
     }
 
+    // 核心修复：处理带属性的 XML 标签造成的 Jackson Object 转换问题
+    private static String extractText(JsonNode root, String path, String fallback) {
+        JsonNode node = nodeAt(root, path);
+        if (node.isMissingNode() || node.isNull())
+            return fallback;
+        if (node.isTextual()) {
+            String text = node.asText();
+            return text.isBlank() ? fallback : text;
+        }
+        if (node.isObject()) {
+            JsonNode valueNode = node.path("value");
+            if (!valueNode.isMissingNode() && !valueNode.asText().isBlank())
+                return valueNode.asText();
+            JsonNode emptyKeyNode = node.path("");
+            if (!emptyKeyNode.isMissingNode() && !emptyKeyNode.asText().isBlank())
+                return emptyKeyNode.asText();
+        }
+        String raw = node.asText();
+        if (raw != null && !raw.isBlank())
+            return raw;
+        return fallback;
+    }
+
     private static long extractLong(JsonNode root, String path) {
         JsonNode node = nodeAt(root, path);
+        if (node.isMissingNode() || node.isNull())
+            return 0;
         if (node.isNumber())
             return node.asLong(0);
         if (node.isTextual() && !node.asText().isBlank())
             return parseLongSafely(node.asText());
-        JsonNode valueNode = node.path("value");
-        if (!valueNode.isMissingNode() && !valueNode.isNull()) {
-            if (valueNode.isNumber())
-                return valueNode.asLong(0);
-            if (valueNode.isTextual() && !valueNode.asText().isBlank())
-                return parseLongSafely(valueNode.asText());
+        if (node.isObject()) {
+            JsonNode valueNode = node.path("value");
+            if (!valueNode.isMissingNode() && !valueNode.isNull()) {
+                if (valueNode.isNumber()) return valueNode.asLong(0);
+                if (valueNode.isTextual() && !valueNode.asText().isBlank()) return parseLongSafely(valueNode.asText());
+            }
+            JsonNode emptyKeyNode = node.path("");
+            if (!emptyKeyNode.isMissingNode() && !emptyKeyNode.asText().isBlank()) {
+                return parseLongSafely(emptyKeyNode.asText());
+            }
         }
         return 0;
     }
 
     private static double extractDouble(JsonNode root, String path) {
         JsonNode node = nodeAt(root, path);
+        if (node.isMissingNode() || node.isNull())
+            return 0.0;
         if (node.isNumber())
             return node.asDouble(0.0);
         if (node.isTextual() && !node.asText().isBlank())
             return parseDoubleSafely(node.asText());
-        JsonNode valueNode = node.path("value");
-        if (!valueNode.isMissingNode() && !valueNode.isNull()) {
-            if (valueNode.isNumber())
-                return valueNode.asDouble(0.0);
-            if (valueNode.isTextual() && !valueNode.asText().isBlank())
-                return parseDoubleSafely(valueNode.asText());
+        if (node.isObject()) {
+            JsonNode valueNode = node.path("value");
+            if (!valueNode.isMissingNode() && !valueNode.isNull()) {
+                if (valueNode.isNumber()) return valueNode.asDouble(0.0);
+                if (valueNode.isTextual() && !valueNode.asText().isBlank()) return parseDoubleSafely(valueNode.asText());
+            }
+            JsonNode emptyKeyNode = node.path("");
+            if (!emptyKeyNode.isMissingNode() && !emptyKeyNode.asText().isBlank()) {
+                return parseDoubleSafely(emptyKeyNode.asText());
+            }
         }
         return 0.0;
-    }
-
-    private static String extractText(JsonNode root, String path, String fallback) {
-        JsonNode node = nodeAt(root, path);
-        if (!node.isMissingNode() && !node.asText().isBlank())
-            return node.asText();
-        JsonNode valueNode = node.path("value");
-        if (!valueNode.isMissingNode() && !valueNode.asText().isBlank())
-            return valueNode.asText();
-        return fallback;
     }
 
     private static JsonNode nodeAt(JsonNode root, String path) {
@@ -953,3 +978,5 @@ public class StockInsiderBot {
         }
     }
 }
+
+```
