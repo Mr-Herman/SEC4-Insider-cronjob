@@ -64,16 +64,15 @@ jobs:
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
-      - name: Run bot
-        env:
-          DING_WEBHOOK_URL: ${{ secrets.DING_WEBHOOK_URL }}
-          DING_WEBHOOK_SIGN: ${{ secrets.DING_WEBHOOK_SIGN }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          TICKERS: ${{ github.event.inputs.tickers || secrets.TICKERS }}
-          THRESHOLD_USD: ${{ github.event.inputs.threshold || secrets.THRESHOLD }}
-          LOOKBACK_DAYS: ${{ github.event.inputs.lookback || secrets.LOOKBACK }}
-        run: |
-          mvn compile exec:java -Dexec.args="\
-            ${{ github.event.inputs.tickers }} \
-            --threshold=${{ github.event.inputs.threshold }} \
-            --lookback=${{ github.event.inputs.lookback }}"
+- name: Run bot
+  env:
+    DING_WEBHOOK_URL: ${{ secrets.DING_WEBHOOK_URL }}
+    DING_WEBHOOK_SIGN: ${{ secrets.DING_WEBHOOK_SIGN }}
+    ...
+  run: |
+    echo "DING_WEBHOOK_URL is set: ${{ secrets.DING_WEBHOOK_URL != '' }}"
+    echo "DING_WEBHOOK_SIGN is set: ${{ secrets.DING_WEBHOOK_SIGN != '' }}"
+    mvn compile exec:java -Dexec.args="\
+      ${{ github.event.inputs.tickers }} \
+      --threshold=${{ github.event.inputs.threshold }} \
+      --lookback=${{ github.event.inputs.lookback }}"
