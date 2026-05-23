@@ -90,7 +90,6 @@ public class StockInsiderBot {
         return eng;
     }
 
-    // 日期格式化 (yyyyMMdd -> yyyy年MM月dd日)
     private static String formatDate(String yyyyMMdd) {
         if (yyyyMMdd == null || yyyyMMdd.length() != 8) return yyyyMMdd;
         try {
@@ -112,7 +111,6 @@ public class StockInsiderBot {
         return String.format("$%.0f", amount);
     }
 
-    // 构建通知内容
     private static String buildGroupedNotification(Map<String, List<AlertEntry>> alertsByTicker, String indexDate) {
         StringBuilder msg = new StringBuilder();
         msg.append("🔔 内部人交易警报 (").append(formatDate(indexDate)).append(")\n\n");
