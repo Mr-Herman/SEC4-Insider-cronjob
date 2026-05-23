@@ -26,7 +26,6 @@ on:
     - cron: '30 14 * * *'  # 中国时间 22:30
     - cron: '55 15 * * *' # 临时测试：中国时间 23:55
 
-
 jobs:
   update-secrets:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.update_defaults == 'true' }}
