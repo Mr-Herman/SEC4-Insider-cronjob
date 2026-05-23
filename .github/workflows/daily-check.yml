@@ -23,7 +23,7 @@ on:
 
   schedule:
     - cron: '30 1 * * *'   # 中国时间 09:30
-    - cron: '30 14 * * *'   # 中国时间 22:30，避开整点高峰
+    - cron: '30 14 * * *'   # 中国时间 22:30，避开整点
 
 jobs:
   update-secrets:
@@ -57,7 +57,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: update-secrets
     if: ${{ always() }}
-
     steps:
       - uses: actions/checkout@v4
 
