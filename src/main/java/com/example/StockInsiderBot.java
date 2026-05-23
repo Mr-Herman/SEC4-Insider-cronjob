@@ -145,7 +145,6 @@ public class StockInsiderBot {
                 throw new Exception("Failed to process any of the " + failedCount + " Form 4 filings found.");
             }
 
-            // 只保留有交易记录的 ticker
             Map<String, List<AlertEntry>> filteredAlerts = new LinkedHashMap<>();
             for (String ticker : tickers) {
                 if (allAlerts.containsKey(ticker) && !allAlerts.get(ticker).isEmpty()) {
@@ -191,7 +190,7 @@ public class StockInsiderBot {
         final double amount;
         final boolean is10b51;
         final String transactionDate;
-        final long sharesOwnedAfter; // 新增
+        final long sharesOwnedAfter;
 
         AlertEntry(String ownerName, String position, String type, String security,
                 long shares, double price, double amount, boolean is10b51,
@@ -208,65 +207,58 @@ public class StockInsiderBot {
         }
     }
 
-   private static String buildGroupedNotification(Map<String, List<AlertEntry>> alertsByTicker, String indexDate) {
-    StringBuilder msg = new StringBuilder();
-    msg.append("⏰ Insider Alerts (").append(indexDate).append(")\n\n");
+    private static String buildGroupedNotification(Map<String, List<AlertEntry>> alertsByTicker, String indexDate) {
+        StringBuilder msg = new StringBuilder();
+        msg.append("⏰ Insider Alerts (").append(indexDate).append(")\n\n");
 
-    boolean isFirstTicker = true;
-    for (Map.Entry<String, List<AlertEntry>> entry : alertsByTicker.entrySet()) {
-        String ticker = entry.getKey();
-        List<AlertEntry> entries = entry.getValue();
+        boolean isFirstTicker = true;
+        for (Map.Entry<String, List<AlertEntry>> entry : alertsByTicker.entrySet()) {
+            String ticker = entry.getKey();
+            List<AlertEntry> entries = entry.getValue();
 
-        // 不是第一个 ticker 时，上一个 ticker 结束后加分隔线
-        if (!isFirstTicker) {
-            msg.append("─────────────────────────────────\n\n");
+            if (!isFirstTicker) {
+                msg.append("─────────────────────────────────\n\n");
+            }
+            isFirstTicker = false;
+
+            for (AlertEntry e : entries) {
+                String planIcon = e.is10b51 ? " 🏷️[10b5-1]" : "";
+                String date = e.transactionDate.isEmpty() ? "N/A" : e.transactionDate;
+                String sharesStr = formatNumber(e.shares);
+                String amountStr = formatAmount(e.amount);
+                String positionStr = e.sharesOwnedAfter > 0 ? formatNumber(e.sharesOwnedAfter) : "N/A";
+
+                String actionIcon;
+                if (e.type.equals("BUY")) {
+                    actionIcon = "📈 BUY";
+                } else {
+                    actionIcon = "📉 SELL";
+                }
+
+                if (e.type.equals("BUY")) {
+                    msg.append("🔴 ");
+                }
+                msg.append("**").append(ticker).append("** · ")
+                        .append(actionIcon).append(" · **")
+                        .append(amountStr).append("**\n");
+
+                msg.append("  ").append(date).append(" · ").append(e.ownerName).append("\n");
+
+                msg.append("  ").append(e.position);
+                if (!planIcon.isEmpty()) {
+                    msg.append(planIcon);
+                }
+                msg.append("\n");
+
+                msg.append("  ").append(sharesStr).append(" @ **$")
+                        .append(String.format("%,.2f", e.price))
+                        .append("** · 持仓 ").append(positionStr).append("\n\n");
+            }
         }
-        isFirstTicker = false;
 
-        boolean isFirstRecord = true;
-        for (AlertEntry e : entries) {
-            // 同一个 ticker 下的不同记录之间不加分隔线，仅留空行
-
-            String planIcon = e.is10b51 ? " 🏷️[10b5-1]" : "";
-            String date = e.transactionDate.isEmpty() ? "N/A" : e.transactionDate;
-            String sharesStr = formatNumber(e.shares);
-            String amountStr = formatAmount(e.amount);
-            String positionStr = e.sharesOwnedAfter > 0 ? formatNumber(e.sharesOwnedAfter) : "N/A";
-
-            String actionIcon;
-            if (e.type.equals("BUY")) {
-                actionIcon = "📈 BUY";
-            } else {
-                actionIcon = "📉 SELL";
-            }
-
-            // 第一行
-            if (e.type.equals("BUY")) {
-                msg.append("🔴 ");
-            }
-            msg.append("**").append(ticker).append("** · ")
-               .append(actionIcon).append(" · **")
-               .append(amountStr).append("**\n");
-
-            // 第二行：日期 · 人名
-            msg.append("  ").append(date).append(" · ").append(e.ownerName).append("\n");
-
-            // 第三行：职位
-            msg.append("  ").append(e.position);
-            if (!planIcon.isEmpty()) {
-                msg.append(planIcon);
-            }
-            msg.append("\n");
-
-            // 第四行：股数 @ **股价** · 持仓
-            msg.append("  ").append(sharesStr).append(" @ **$")
-               .append(String.format("%,.2f", e.price))
-               .append("** · 持仓 ").append(positionStr).append("\n\n");
-        }
+        return msg.toString().trim();
     }
 
-    return msg.toString().trim();
-}
     private static String formatNumber(long num) {
         if (num >= 1_000_000)
             return String.format("%.1fM", num / 1_000_000.0);
@@ -565,13 +557,30 @@ public class StockInsiderBot {
         String normalizedXmlCik = rawXmlCik.replaceFirst("^0+(?!$)", "");
         String ticker = cikToRequestedTicker.getOrDefault(normalizedXmlCik,
                 issuer.path("issuerTradingSymbol").asText("Unknown"));
-        JsonNode reportingOwner = root.path("reportingOwner");
-        if (!isOfficerOrDirector(reportingOwner)) {
+
+        // 核心修复：处理多报告人（Array）的情况
+        JsonNode reportingOwnerNode = root.path("reportingOwner");
+        JsonNode primaryOwner = reportingOwnerNode;
+        if (reportingOwnerNode.isArray()) {
+            boolean found = false;
+            for (JsonNode node : reportingOwnerNode) {
+                if (isOfficerOrDirector(node)) {
+                    primaryOwner = node;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found && reportingOwnerNode.size() > 0) {
+                primaryOwner = reportingOwnerNode.get(0);
+            }
+        }
+
+        if (!isOfficerOrDirector(primaryOwner)) {
             logDebug("Skipping Form 4 for " + ticker + " - reporter is not an officer/director.");
             return alerts;
         }
-        String ownerName = reportingOwner.path("reportingOwnerId").path("rptOwnerName").asText("Unknown Owner");
-        String position = extractPosition(reportingOwner);
+        String ownerName = primaryOwner.path("reportingOwnerId").path("rptOwnerName").asText("Unknown Owner");
+        String position = extractPosition(primaryOwner);
 
         JsonNode nonDeriv = root.path("nonDerivativeTable");
         if (nonDeriv.isMissingNode())
@@ -605,8 +614,16 @@ public class StockInsiderBot {
             return false;
         String isDirector = rel.path("isDirector").asText();
         String isOfficer = rel.path("isOfficer").asText();
-        return "true".equalsIgnoreCase(isDirector) || "1".contentEquals(isDirector) ||
-                "true".equalsIgnoreCase(isOfficer) || "1".contentEquals(isOfficer);
+        if ("true".equalsIgnoreCase(isDirector) || "1".contentEquals(isDirector) ||
+            "true".equalsIgnoreCase(isOfficer) || "1".contentEquals(isOfficer)) {
+            return true;
+        }
+        // Fallback title check
+        JsonNode title = rel.path("officerTitle");
+        if (!title.isMissingNode() && !title.asText().isBlank()) {
+            return true;
+        }
+        return false;
     }
 
     private static String extractPosition(JsonNode reportingOwner) {
@@ -646,9 +663,9 @@ public class StockInsiderBot {
 
     private static AlertEntry processTransaction(JsonNode transaction, String ownerName, String position,
             long minimumUsd) {
-        String code = transaction.path("transactionCoding").path("transactionCode").asText();
+        String code = extractText(transaction, "transactionCoding.transactionCode", "");
 
-        if (!"P".equals(code) && !"S".equals(code)) {
+        if (!"P".equalsIgnoreCase(code) && !"S".equalsIgnoreCase(code)) {
             if (debugEnabled)
                 logDebug("Skipping transaction: code=" + code + " (not P/S)");
             return null;
@@ -669,10 +686,10 @@ public class StockInsiderBot {
             return null;
         }
 
-        String type = "P".equals(code) ? "BUY" : "SELL";
+        String type = "P".equalsIgnoreCase(code) ? "BUY" : "SELL";
         String security = extractText(transaction, "securityTitle", "stock");
-        String is10b51 = transaction.path("transactionCoding").path("is10b51Transaction").asText();
-        boolean isPlan = "true".equalsIgnoreCase(is10b51);
+        String is10b51 = extractText(transaction, "transactionCoding.is10b51Transaction", "false");
+        boolean isPlan = "true".equalsIgnoreCase(is10b51) || "1".equals(is10b51);
 
         String transactionDate = extractText(transaction, "transactionDate", "");
         if (!transactionDate.isEmpty() && transactionDate.length() >= 10) {
