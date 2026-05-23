@@ -227,14 +227,13 @@ public class StockInsiderBot {
                 String sharesStr = formatNumber(e.shares);
                 String amountStr = formatAmount(e.amount);
                 String positionStr = e.sharesOwnedAfter > 0 ? formatNumber(e.sharesOwnedAfter) : "N/A";
-
+                
                 String actionIcon;
                 if (e.type.equals("BUY")) {
-                    actionIcon = "📈 BUY";
+                    actionIcon = "📈 买入";
                 } else {
-                    actionIcon = "📉 SELL";
+                    actionIcon = "📉 卖出";
                 }
-
                 if (e.type.equals("BUY")) {
                     msg.append("🔴 ");
                 }
