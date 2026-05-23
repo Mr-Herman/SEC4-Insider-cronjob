@@ -21,6 +21,10 @@ on:
         default: 'false'
         type: boolean
 
+  schedule:
+    - cron: '30 1 * * *'   # 09:30 CST
+    - cron: '0 14 * * *'   # 22:00 CST
+
 jobs:
   update-secrets:
     if: github.event.inputs.update_defaults == 'true'
