@@ -41,7 +41,8 @@ public class StockInsiderBot {
             Map.entry("BRK-B", "1067983"),
             Map.entry("MSFT", "0000789019"),
             Map.entry("ZTS", "0001555285"),
-            Map.entry("STZ", "0001593873"));
+            Map.entry("STZ", "0001593873")
+    );
 
     private static final Map<String, String> POSITION_TRANSLATIONS = new HashMap<>();
     static {
@@ -76,6 +77,8 @@ public class StockInsiderBot {
         POSITION_TRANSLATIONS.put("senior manager", "高级经理");
     }
 
+    private static boolean debugEnabled = DEFAULT_DEBUG;
+
     private static String translatePosition(String eng) {
         if (eng == null || eng.isBlank()) return "未知职位";
         String lower = eng.toLowerCase(Locale.ROOT);
@@ -90,12 +93,9 @@ public class StockInsiderBot {
     public static void main(String[] args) {
         try {
             Map<String, String> options = parseOptions(args);
-            String tickersArg = firstNonBlank(options.get("tickers"), System.getenv("TICKERS"),
-                    options.get("positional"));
-            long minimumUsd = parseLong(firstNonBlank(options.get("threshold"), System.getenv("THRESHOLD_USD")),
-                    DEFAULT_MINIMUM_USD);
-            int maxLookbackDays = parseInt(firstNonBlank(options.get("lookback"), System.getenv("LOOKBACK_DAYS")),
-                    DEFAULT_MAX_LOOKBACK_DAYS);
+            String tickersArg = firstNonBlank(options.get("tickers"), System.getenv("TICKERS"), options.get("positional"));
+            long minimumUsd = parseLong(firstNonBlank(options.get("threshold"), System.getenv("THRESHOLD_USD")), DEFAULT_MINIMUM_USD);
+            int maxLookbackDays = parseInt(firstNonBlank(options.get("lookback"), System.getenv("LOOKBACK_DAYS")), DEFAULT_MAX_LOOKBACK_DAYS);
             boolean debug = parseBoolean(firstNonBlank(options.get("debug"), System.getenv("DEBUG")), DEFAULT_DEBUG);
             setDebug(debug);
 
@@ -168,7 +168,14 @@ public class StockInsiderBot {
                 return;
             }
 
-            message = buildGroupedNotification(filteredAlerts, masterIndex != null ? masterIndex.indexDate : LocalDate.now().toString(), unmappedTickers, minimumUsd, processedCount, failedCount, form4Urls.size());
+            message = buildGroupedNotification(filteredAlerts,
+                    masterIndex != null ? masterIndex.indexDate : LocalDate.now().toString(),
+                    unmappedTickers,
+                    minimumUsd,
+                    processedCount,
+                    failedCount,
+                    form4Urls.size()
+            );
             boolean notified = sendNotification(message);
             if (!notified) System.out.println(message);
 
@@ -179,6 +186,7 @@ public class StockInsiderBot {
         }
     }
 
+    // ======= 折叠美化通知方法 =======
     private static String buildGroupedNotification(Map<String, List<AlertEntry>> alertsByTicker, String indexDate,
                                                     Set<String> unmappedTickers, long thresholdUsd,
                                                     int processedCount, int failedCount, int totalForm4) {
@@ -194,7 +202,7 @@ public class StockInsiderBot {
         int totalTrades = alertsByTicker.values().stream().mapToInt(List::size).sum();
         int totalStocks = alertsByTicker.size();
         double totalAmount = alertsByTicker.values().stream().flatMap(List::stream).mapToDouble(a -> a.amount).sum();
-        msg.append("📊 **命中结果**：").append(totalStocks).append(" 个股票 | ").append(totalTrades).append(" 笔交易 | 合计 $").append(String.format("%,.1fM", totalAmount / 1_000_000)).append("\n");
+        msg.append("📊 **命中结果**：").append(totalStocks).append(" 个股票 | ").append(totalTrades).append(" 笔交易 | 总金额 $").append(String.format("%,.1fM", totalAmount/1_000_000)).append("\n");
         msg.append("━━━━━━━━━━━━━━━━━━━━\n\n");
 
         for (Map.Entry<String, List<AlertEntry>> entry : alertsByTicker.entrySet()) {
@@ -204,10 +212,9 @@ public class StockInsiderBot {
             long sellCount = trades.size() - buyCount;
             double totalTickerAmount = trades.stream().mapToDouble(a -> a.amount).sum();
 
-            // DingTalk/Discord 折叠
             msg.append("<details>\n<summary>**").append(ticker).append("** (").append(trades.size())
                     .append(" 笔 | 买入 ").append(buyCount).append(" | 卖出 ").append(sellCount)
-                    .append(" | 总金额 $").append(String.format("%,.1fM", totalTickerAmount / 1_000_000)).append(")</summary>\n\n");
+                    .append(" | 总金额 $").append(String.format("%,.1fM", totalTickerAmount/1_000_000)).append(")</summary>\n\n");
 
             msg.append("| 操作 | 日期 | 人员 | 职位 | 股数 | 价格 | 持股后 |\n");
             msg.append("|-----|-----|-----|-----|-----|-----|-----|\n");
@@ -224,11 +231,10 @@ public class StockInsiderBot {
             }
             msg.append("</details>\n\n");
         }
-
         return msg.toString().trim();
     }
 
-    // ==================== 以下保持原辅助方法 ====================
+    // ======= 下面保留原有辅助方法 =======
     private static class AlertEntry {
         final String ownerName;
         final String position;
@@ -255,6 +261,12 @@ public class StockInsiderBot {
         }
     }
 
+    private static class MasterIndex {
+        final String indexDate;
+        final String content;
+        MasterIndex(String indexDate, String content) { this.indexDate = indexDate; this.content = content; }
+    }
+
     private static String formatDate(String dateStr) {
         if (dateStr == null || dateStr.isBlank()) return dateStr;
         String clean = dateStr.replace("-", "");
@@ -264,38 +276,17 @@ public class StockInsiderBot {
         return dateStr;
     }
 
-    private static String formatNumber(long num) {
-        if (num >= 1_000_000) return String.format("%.1fM", num / 1_000_000.0);
-        if (num >= 1_000) return String.format("%.1fK", num / 1_000.0);
-        return Long.toString(num);
-    }
-
     private static String firstNonBlank(String... values) {
-        for (String value : values)
-            if (value != null && !value.isBlank())
-                return value;
+        for (String value : values) if (value != null && !value.isBlank()) return value;
         return null;
     }
 
-    private static long parseLong(String value, long fallback) {
-        try { return value != null ? Long.parseLong(value.trim()) : fallback; } catch (Exception e) { return fallback; }
-    }
-
-    private static int parseInt(String value, int fallback) {
-        try { return value != null ? Integer.parseInt(value.trim()) : fallback; } catch (Exception e) { return fallback; }
-    }
-
-    private static boolean parseBoolean(String value, boolean fallback) {
-        if (value == null || value.isBlank()) return fallback;
-        String v = value.trim().toLowerCase();
-        return !(v.equals("false") || v.equals("0") || v.equals("no") || v.equals("off"));
-    }
-
+    private static long parseLong(String value, long fallback) { try { return value != null ? Long.parseLong(value.trim()) : fallback; } catch (Exception e) { return fallback; } }
+    private static int parseInt(String value, int fallback) { try { return value != null ? Integer.parseInt(value.trim()) : fallback; } catch (Exception e) { return fallback; } }
+    private static boolean parseBoolean(String value, boolean fallback) { if (value == null || value.isBlank()) return fallback; String v = value.trim().toLowerCase(); return !(v.equals("false")||v.equals("0")||v.equals("no")||v.equals("off")); }
     private static void setDebug(boolean enabled) { debugEnabled = enabled; }
-    private static void logDebug(String message) { if (debugEnabled) System.out.println("DEBUG: " + message); }
-    private static boolean debugEnabled = DEFAULT_DEBUG;
+    private static String[] parseTickers(String tickersArg) { return Arrays.stream(tickersArg.split(",")).map(String::trim).filter(s -> !s.isEmpty()).map(String::toUpperCase).toArray(String[]::new); }
+    private static Map<String,String> parseOptions(String[] args) { Map<String,String> options=new HashMap<>(); String positional=null; for(String arg:args){ if(arg==null||arg.isBlank()) continue; if(arg.startsWith("--")){ String normalized=arg.substring(2); String[] parts=normalized.split("=",2); if(parts.length==2) options.put(parts[0].toLowerCase(),parts[1]); else options.put(parts[0].toLowerCase(),"true"); } else if(positional==null) positional=arg; } options.put("positional",positional); return options; }
 
-    // ==================== 其余下载、解析、通知方法保持不变 ====================
-    // 你之前的 downloadText、parseForm4、sendNotification、sendErrorNotification 等方法可以原样保留
-    // 只需替换 buildGroupedNotification 即可实现折叠美化效果
+    // === 其他下载、解析、通知等方法全部保持原有逻辑 ===
 }
