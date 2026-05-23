@@ -1,9 +1,3 @@
-导致漏报的核心原因在于 **Jackson XML 解析器的一个底层特性（或者说是坑）**：
-在 SEC Form 4 的 XML 文件中，如果某个标签带有属性（例如 <transactionCode id="F1">P</transactionCode>），Jackson 会将其解析为一个 JSON Object {"id": "F1", "": "P"}，而不是单纯的字符串 "P"。
-此时原代码直接调用 .asText() 会返回空字符串 ""。由于 transactionCode 提取为空，或者 shares / price 提取失败（变为 0），导致这笔高达数百万美元的买入记录在 if (!"P".equalsIgnoreCase(code)) 或 if (amount < minimumUsd) 时被直接丢弃了。另外，有些 10% Owner / 信托持股人并未勾选 isOfficer，也会被误杀。
-我重写了底层的 extractText、extractLong 和 extractDouble 函数，增加了对空键 ""（Jackson 存储带属性文本的方式）的提取逻辑，并且放宽了内部人士判定（将 10% Owner 和 Trust 囊括在内）。
-以下是修好且未更改其他任何无关逻辑的完整代码，请直接替换：
-```java
 package com.example;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -978,5 +972,3 @@ public class StockInsiderBot {
         }
     }
 }
-
-```
