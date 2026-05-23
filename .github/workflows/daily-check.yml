@@ -90,6 +90,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      - name: Run bot
-        run: |
-          mvn compile exec:java -Dexec.args="${{ env.TICKERS }} --threshold=${{ env.THRESHOLD_USD }} --lookback=${{ env.LOOKBACK_DAYS }}"
+- name: Run bot
+  env:
+    DING_WEBHOOK_URL: ${{ secrets.DING_WEBHOOK_URL }}
+    DING_WEBHOOK_SIGN: ${{ secrets.DING_WEBHOOK_SIGN }}
+    TICKERS: ${{ inputs.tickers || secrets.TICKERS }}
+    THRESHOLD_USD: ${{ inputs.threshold || secrets.THRESHOLD }}
+    LOOKBACK_DAYS: ${{ inputs.lookback || secrets.LOOKBACK }}
+  run: mvn compile exec:java -Dexec.args="${{ inputs.tickers }} --threshold=${{ inputs.threshold }} --lookback=${{ inputs.lookback }}"
