@@ -253,8 +253,6 @@ public class Form144Bot {
         String approximateSaleDate = "";
     }
 
-    // ==================== Form 144 解析 ====================
-
     private static Form144Entry parseForm144Filing(
             String rawText,
             IndexFiling filing,
@@ -275,7 +273,6 @@ public class Form144Bot {
         String compact = compactText(rawText);
         String lower = compact.toLowerCase(Locale.ROOT);
 
-        // Form 144 里如果是交税代扣 / sell-to-cover / net settlement，不作为有效计划卖出提醒。
         if (isTaxWithholdingOrSellToCover(lower)) {
             logDebug("Skipping Form 144: tax withholding / sell-to-cover detected. url=" + filing.url);
             return null;
@@ -329,8 +326,6 @@ public class Form144Bot {
     private static Parsed144Fields parseStructured144Fields(String compact) {
         Parsed144Fields f = new Parsed144Fields();
 
-        // 适配新版 Form 144 的纯文本表格行。常见结构大致为：
-        // LIVE [CIK] [Seller] ... [Relationship] [Security] [Broker] [Shares] [MarketValue] [SharesOutstanding] [ApproxDate] [Exchange]
         Matcher rowMatcher = Pattern.compile(
                 "(?is)\\bLIVE\\s+[0-9]{1,10}\\s+"
                         + "([A-Z][A-Za-z .,'-]{2,90})\\s+"
@@ -355,7 +350,6 @@ public class Form144Bot {
             return f;
         }
 
-        // 兜底：抓取可能的卖出数量 / 市值 / 日期。
         Matcher numberMatcher = Pattern.compile(
                 "(?is)\\b([0-9][0-9,]*)\\s+([0-9][0-9,]*(?:\\.[0-9]+)?)\\s+[0-9][0-9,]*\\s+([0-9]{1,2}/[0-9]{1,2}/[0-9]{4})\\s+(?:NYSE|NASDAQ|Nasdaq|NYSE American|OTC|Cboe|AMEX)"
         ).matcher(compact);
@@ -427,8 +421,6 @@ public class Form144Bot {
                 || lower.contains("to cover withholding taxes");
     }
 
-    // ==================== 通知构建 ====================
-
     private static String buildForm144Notification(
             Map<String, List<Form144Entry>> alertsByTicker,
             String indexDate,
@@ -441,7 +433,6 @@ public class Form144Bot {
         final String br = "  \n";
         StringBuilder msg = new StringBuilder();
 
-        // 注意：这里不再重复写标题，因为钉钉 title 已经是 “Form 144 关联方计划卖出提醒”。
         msg.append("📅 披露日期：").append(formatDate(indexDate)).append(br);
         msg.append("🔎 扫描范围：最近 ").append(lookbackDays).append(" 天").append(br);
         msg.append("📄 已处理 Form 144：").append(processedCount).append(" 份").append(br);
@@ -458,7 +449,7 @@ public class Form144Bot {
         msg.append("\n");
 
         for (Map.Entry<String, List<Form144Entry>> tickerEntry : alertsByTicker.entrySet()) {
-            msg.append(tickerEntry.getKey()).append("\n\n");
+            msg.append("**").append(tickerEntry.getKey()).append("**").append("\n\n");
 
             for (Form144Entry entry : tickerEntry.getValue()) {
                 msg.append("⚠️ 关联方计划卖出\n\n");
@@ -467,11 +458,11 @@ public class Form144Bot {
                 msg.append("计划卖出数量：").append(safeText(entry.sharesToSell, "N/A")).append(" 股").append(br);
                 msg.append("预计卖出金额：约 ").append(safeText(entry.marketValue, "N/A")).append(br);
                 msg.append("计划卖出日期：").append(safeText(entry.approximateSaleDate, "N/A")).append(br);
-                msg.append("证券类型：").append(safeText(entry.securitiesTitle, "Common Stock")).append("\n\n");
-
-                msg.append("📌 分析判断：").append(entry.riskLevel).append("\n\n");
-                msg.append("原因：\n\n");
-                msg.append(entry.analysis).append("\n\n");
+                msg.append("证券类型：")
+                        .append(safeText(entry.securitiesTitle, "Common Stock"))
+                        .append(" ｜ 📌 分析判断：")
+                        .append(safeText(entry.riskLevel, "N/A"))
+                        .append("\n\n");
             }
         }
 
@@ -507,22 +498,14 @@ public class Form144Bot {
 
     private static String buildAnalysis(String riskLevel) {
         if (riskLevel.startsWith("高关注")) {
-            return "这是计划卖出通知，不代表已经全部成交\n"
-                    + "金额较大，建议后续观察是否出现对应 Form 4 实际卖出\n"
-                    + "如果后续 Form 4 与该 Form 144 匹配，可以视为计划执行完成\n"
-                    + "若连续多名高管提交 Form 144，风险等级提高";
+            return "金额较大，建议后续观察是否出现对应 Form 4 实际卖出";
         }
 
         if (riskLevel.startsWith("中性偏负面")) {
-            return "这是计划卖出通知，不代表已经全部成交\n"
-                    + "金额达到一定规模，建议后续观察是否出现对应 Form 4 实际卖出\n"
-                    + "如果后续 Form 4 与该 Form 144 匹配，可以视为计划执行完成\n"
-                    + "若连续多名高管提交 Form 144，风险等级提高";
+            return "金额达到一定规模，建议后续观察是否出现对应 Form 4 实际卖出";
         }
 
-        return "这是计划卖出通知，不代表已经全部成交\n"
-                + "单笔规模不大，单独参考价值有限\n"
-                + "主要用于跟踪后续是否转化为 Form 4 实际卖出";
+        return "单笔规模不大，单独参考价值有限";
     }
 
     private static String estimateRiskLevel(String sharesText, String valueText) {
@@ -539,8 +522,6 @@ public class Form144Bot {
 
         return "低关注";
     }
-
-    // ==================== SEC 数据下载和索引解析 ====================
 
     private static MasterIndex findMasterIndex(LocalDate startDate, int maxLookbackDays) {
         LocalDate date = startDate;
@@ -727,8 +708,6 @@ public class Form144Bot {
         throw lastException != null ? lastException : new IllegalStateException("Failed to download " + url);
     }
 
-    // ==================== 通知发送 ====================
-
     private static boolean sendNotification(String title, String message) {
         String dingTalkUrl = System.getenv("DING_WEBHOOK_URL");
         if (dingTalkUrl != null && !dingTalkUrl.isBlank()) {
@@ -747,8 +726,6 @@ public class Form144Bot {
     private static boolean sendDingTalkWebhook(String webhookUrl, String secret, String title, String message) {
         try {
             String signedUrl = buildDingTalkUrl(webhookUrl, secret);
-
-            // 钉钉标题只显示一次，正文里不再重复标题。
             String markdown = "### 🔔 " + title + "\n\n" + message;
 
             String payload = "{\"msgtype\":\"markdown\",\"markdown\":{\"title\":\""
@@ -824,8 +801,6 @@ public class Form144Bot {
             return false;
         }
     }
-
-    // ==================== 通用工具 ====================
 
     private static Map<String, String> parseOptions(String[] args) {
         Map<String, String> options = new HashMap<>();
