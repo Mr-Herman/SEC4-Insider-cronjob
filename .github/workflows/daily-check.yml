@@ -16,9 +16,9 @@ on:
         required: false
         default: ''
       job_type:
-        description: 'Job type: form4, schedule13, all'
+        description: 'Job type: form4, schedule13, all (leave blank to use secret)'
         required: false
-        default: 'form4'
+        default: ''
       update_defaults:
         description: 'Update cronjob default config? (saves provided values as secrets)'
         required: false
@@ -26,7 +26,7 @@ on:
         type: boolean
 
   schedule:
-    - cron: '37 4 * * *'   # 中国时间 12:37，自动触发默认跑 all
+    - cron: '37 4 * * *'   # 中国时间 12:37
     # - cron: '37 1 * * *'   # 中国时间 09:37
     # - cron: '18 4 * * *'   # 中国时间 12:18
     # - cron: '43 12 * * *'  # 中国时间 20:43
@@ -60,6 +60,14 @@ jobs:
         with:
           name: LOOKBACK
           value: ${{ github.event.inputs.lookback }}
+          pat: ${{ secrets.PAT }}
+
+      - name: Update JOB_TYPE secret
+        if: ${{ github.event.inputs.job_type != '' }}
+        uses: gliech/create-github-secret-action@v1
+        with:
+          name: JOB_TYPE
+          value: ${{ github.event.inputs.job_type }}
           pat: ${{ secrets.PAT }}
 
   check:
@@ -100,10 +108,11 @@ jobs:
           TICKERS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tickers != '' && github.event.inputs.tickers || secrets.TICKERS }}
           THRESHOLD_USD: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.threshold != '' && github.event.inputs.threshold || secrets.THRESHOLD }}
           LOOKBACK_DAYS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.lookback != '' && github.event.inputs.lookback || secrets.LOOKBACK }}
+          JOB_TYPE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.job_type != '' && github.event.inputs.job_type || secrets.JOB_TYPE }}
 
-          # workflow_dispatch 可以传 job_type；GitHub schedule 没有 inputs，所以默认跑 all
-          JOB_TYPE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.job_type != '' && github.event.inputs.job_type || 'all' }}
         run: |
+          JOB_TYPE="${JOB_TYPE:-all}"
+
           echo "Trigger event: ${{ github.event_name }}"
           echo "JOB_TYPE=$JOB_TYPE"
           echo "DING_WEBHOOK_URL is set: ${{ secrets.DING_WEBHOOK_URL != '' }}"
@@ -111,6 +120,7 @@ jobs:
           echo "TICKERS is set: ${{ secrets.TICKERS != '' }}"
           echo "THRESHOLD is set: ${{ secrets.THRESHOLD != '' }}"
           echo "LOOKBACK is set: ${{ secrets.LOOKBACK != '' }}"
+          echo "JOB_TYPE secret is set: ${{ secrets.JOB_TYPE != '' }}"
 
           if [ -z "$TICKERS" ]; then
             echo "TICKERS is empty. Please set repository secret TICKERS or pass workflow input tickers."
