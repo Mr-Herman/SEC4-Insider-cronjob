@@ -515,11 +515,9 @@ public class Form144Bot {
                 msg.append("计划卖出数量：").append(safeText(entry.sharesToSell, "N/A")).append(" 股").append(br);
                 msg.append("预计卖出金额：约 ").append(safeText(entry.marketValue, "N/A")).append(br);
                 msg.append("计划卖出日期：").append(safeText(entry.approximateSaleDate, "N/A")).append(br);
-                msg.append("证券类型：")
-                        .append(safeText(entry.securitiesTitle, "Common Stock"))
-                        .append(" ｜ 📌 分析判断：")
-                        .append(safeText(entry.riskLevel, "N/A"))
-                        .append("\n\n");
+                msg.append("证券类型：").append(safeText(entry.securitiesTitle, "Common Stock")).append(br);
+                msg.append("📌 分析判断：").append(safeText(entry.riskLevel, "N/A")).append("\n\n");
+                
             }
         }
 
