@@ -35,6 +35,9 @@ public class Form144Bot {
     private static final boolean DEFAULT_DEBUG = true;
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(30);
 
+    private static final long MIN_VALUE_TO_ALERT = 500_000L;
+    private static final long MIN_SHARES_TO_ALERT = 10_000L;
+
     private static final Map<String, String> FALLBACK_TICKER_MAP = Map.ofEntries(
             Map.entry("BRKB", "1067983"),
             Map.entry("BRK-B", "1067983"),
@@ -273,11 +276,6 @@ public class Form144Bot {
         String compact = compactText(rawText);
         String lower = compact.toLowerCase(Locale.ROOT);
 
-        if (isTaxWithholdingOrSellToCover(lower)) {
-            logDebug("Skipping Form 144: tax withholding / sell-to-cover detected. url=" + filing.url);
-            return null;
-        }
-
         Parsed144Fields parsed = parseStructured144Fields(compact);
 
         String filingDate = firstNonBlank(
@@ -301,6 +299,12 @@ public class Form144Bot {
 
         if (sharesToSell.isBlank() && marketValue.isBlank()) {
             logDebug("Skipping Form 144: cannot parse shares/value. url=" + filing.url);
+            return null;
+        }
+
+        if (shouldSkipForm144(lower, sharesToSell, marketValue)) {
+            logDebug("Skipping Form 144: noise filter matched. shares=" + sharesToSell
+                    + " value=" + marketValue + " url=" + filing.url);
             return null;
         }
 
@@ -397,6 +401,25 @@ public class Form144Bot {
         return extractByRegex(rawText, "(?is)Name of Issuer[^0-9]{0,200}CIK[^0-9]{0,30}([0-9]+)");
     }
 
+    private static boolean shouldSkipForm144(String lower, String sharesText, String valueText) {
+        if (isTaxWithholdingOrSellToCover(lower)) {
+            return true;
+        }
+
+        if (isGiftDonationOrEstatePlanning(lower)) {
+            return true;
+        }
+
+        if (isIssuerRepurchaseOrBuyback(lower)) {
+            return true;
+        }
+
+        double value = parseMoney(valueText);
+        long shares = parseLongSafely(sharesText);
+
+        return value > 0 && value < MIN_VALUE_TO_ALERT && shares < MIN_SHARES_TO_ALERT;
+    }
+
     private static boolean isTaxWithholdingOrSellToCover(String lower) {
         if (lower == null || lower.isBlank()) {
             return false;
@@ -419,6 +442,40 @@ public class Form144Bot {
                 || lower.contains("net settled")
                 || lower.contains("to satisfy tax obligations")
                 || lower.contains("to cover withholding taxes");
+    }
+
+    private static boolean isGiftDonationOrEstatePlanning(String lower) {
+        if (lower == null || lower.isBlank()) {
+            return false;
+        }
+
+        boolean hasGiftSignal = lower.contains("gift")
+                || lower.contains("charitable donation")
+                || lower.contains("donated")
+                || lower.contains("donation")
+                || lower.contains("estate planning")
+                || lower.contains("without consideration");
+
+        boolean hasRealSaleSignal = lower.contains("proposed sale")
+                || lower.contains("aggregate market value")
+                || lower.contains("approximate date of sale")
+                || lower.contains("sale price")
+                || lower.contains("broker");
+
+        return hasGiftSignal && !hasRealSaleSignal;
+    }
+
+    private static boolean isIssuerRepurchaseOrBuyback(String lower) {
+        if (lower == null || lower.isBlank()) {
+            return false;
+        }
+
+        return lower.contains("issuer repurchase")
+                || lower.contains("share repurchase")
+                || lower.contains("stock repurchase")
+                || lower.contains("repurchase program")
+                || lower.contains("buyback")
+                || lower.contains("tender offer");
     }
 
     private static String buildForm144Notification(
