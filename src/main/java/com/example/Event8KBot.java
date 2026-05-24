@@ -128,8 +128,7 @@ public class Event8KBot {
 
                         logDebug("Creating 8-K alert: " + entry.ticker
                                 + " level=" + entry.level
-                                + " category=" + entry.category
-                                + " focus=" + entry.focus);
+                                + " category=" + entry.category);
                     } else {
                         logDebug("Skipping low-value 8-K: " + filing.ticker + " url=" + filing.url);
                     }
@@ -211,18 +210,13 @@ public class Event8KBot {
         final String filingDate;
         final String level;
         final String category;
-        final String focus;
-        final String judgement;
 
-        Event8KEntry(String ticker, String companyName, String filingDate,
-                     String level, String category, String focus, String judgement) {
+        Event8KEntry(String ticker, String companyName, String filingDate, String level, String category) {
             this.ticker = ticker;
             this.companyName = companyName;
             this.filingDate = filingDate;
             this.level = level;
             this.category = category;
-            this.focus = focus;
-            this.judgement = judgement;
         }
 
         boolean isHighValue() {
@@ -233,8 +227,6 @@ public class Event8KBot {
     private static class EventAnalysis {
         String level;
         String category;
-        String focus;
-        String judgement;
     }
 
     private static Event8KEntry parse8KFiling(String rawText, IndexFiling filing) {
@@ -256,9 +248,7 @@ public class Event8KBot {
                 filing.companyName,
                 filing.filingDate,
                 analysis.level,
-                analysis.category,
-                analysis.focus,
-                analysis.judgement
+                analysis.category
         );
     }
 
@@ -266,21 +256,15 @@ public class Event8KBot {
         String lower = text == null ? "" : text.toLowerCase(Locale.ROOT);
         EventAnalysis result = new EventAnalysis();
 
-        if (containsItem(items, "1.03")
-                || containsItem(items, "3.01")
-                || containsAny(lower,
-                "bankruptcy",
-                "chapter 11",
-                "chapter 7",
-                "delisting",
-                "nasdaq notice",
-                "nyse notice",
-                "going concern")) {
-
+        if (containsItem(items, "1.03") || hasStrongBankruptcySignal(lower)) {
             result.level = "🔴 高风险";
-            result.category = "退市/破产/持续经营风险";
-            result.focus = buildRiskFocus(lower);
-            result.judgement = "偏负面，建议重点确认风险原因、整改期限、现金状况和是否影响持续经营";
+            result.category = "破产/重组风险";
+            return result;
+        }
+
+        if (containsItem(items, "3.01") || hasStrongDelistingSignal(lower)) {
+            result.level = "🔴 高风险";
+            result.category = "退市风险";
             return result;
         }
 
@@ -298,8 +282,6 @@ public class Event8KBot {
 
             result.level = "🔴 高风险";
             result.category = "财务/监管/诉讼风险";
-            result.focus = buildLegalOrAccountingFocus(lower);
-            result.judgement = "偏负面，建议关注影响金额、监管机构、是否涉及财报重述或内控缺陷";
             return result;
         }
 
@@ -318,8 +300,6 @@ public class Event8KBot {
 
             result.level = "🔴 高关注";
             result.category = "融资/稀释风险";
-            result.focus = buildFinancingFocus(lower);
-            result.judgement = "偏敏感，建议关注融资金额、发行价格、稀释比例、债务成本和资金用途";
             return result;
         }
 
@@ -340,8 +320,6 @@ public class Event8KBot {
 
             result.level = "🔴 高关注";
             result.category = "业绩披露";
-            result.focus = buildEarningsFocus(lower);
-            result.judgement = "中性偏重要，建议关注业绩是否超预期以及 guidance 是否变化";
             return result;
         }
 
@@ -359,8 +337,6 @@ public class Event8KBot {
 
             result.level = "🔴 高关注";
             result.category = "重大合同/订单";
-            result.focus = buildContractFocus(lower);
-            result.judgement = "偏正面，建议关注合同金额、客户质量、交付周期和是否带来新增收入";
             return result;
         }
 
@@ -375,8 +351,6 @@ public class Event8KBot {
 
             result.level = "🔴 高关注";
             result.category = "并购/资产交易";
-            result.focus = buildMAFocus(lower);
-            result.judgement = "需结合交易金额、支付方式、是否稀释和资产质量判断影响方向";
             return result;
         }
 
@@ -394,232 +368,50 @@ public class Event8KBot {
 
             result.level = "🟠 中高关注";
             result.category = "高管变动";
-            result.focus = buildManagementFocus(lower);
-            result.judgement = "需关注是否为 CEO/CFO 突然离职、是否存在分歧，以及继任安排是否明确";
             return result;
         }
 
         if (containsItem(items, "7.01") || containsItem(items, "8.01")) {
             result.level = "🟠 中关注";
             result.category = "经营/投资者更新";
-            result.focus = buildGeneralFocus(lower);
-            result.judgement = "中性偏重要，建议关注公告中是否包含订单、客户、经营进展、融资或业绩指引变化";
             return result;
         }
 
         result.level = "⚪ 低关注";
         result.category = "普通公告";
-        result.focus = "一般性 8-K 公告，暂未识别到明确高价值事件";
-        result.judgement = "单独参考价值有限";
         return result;
     }
 
-    private static String buildEarningsFocus(String lower) {
-        List<String> points = new ArrayList<>();
-
-        if (containsAny(lower, "revenue", "sales")) {
-            points.add("收入");
-        }
-        if (containsAny(lower, "gross margin", "margin")) {
-            points.add("利润率");
-        }
-        if (containsAny(lower, "net loss", "loss", "net income", "profit")) {
-            points.add("亏损");
-        }
-        if (containsAny(lower, "backlog", "orders", "contract", "awards")) {
-            points.add("订单");
-        }
-        if (containsAny(lower, "guidance", "outlook", "forecast")) {
-            points.add("guidance");
+    private static boolean hasStrongBankruptcySignal(String lower) {
+        if (lower == null || lower.isBlank()) {
+            return false;
         }
 
-        if (points.isEmpty()) {
-            return "最新季度业绩";
-        }
-
-        return "最新季度业绩，" + String.join("、", points);
+        return lower.contains("filed for bankruptcy")
+                || lower.contains("files for bankruptcy")
+                || lower.contains("chapter 11 petition")
+                || lower.contains("voluntary petition")
+                || lower.contains("bankruptcy court")
+                || lower.contains("commenced chapter 11")
+                || lower.contains("entered chapter 11")
+                || lower.contains("restructuring support agreement")
+                || lower.contains("going concern warning")
+                || lower.contains("substantial doubt about its ability to continue as a going concern");
     }
 
-    private static String buildFinancingFocus(String lower) {
-        List<String> points = new ArrayList<>();
-
-        if (containsAny(lower, "offering", "registered direct offering")) {
-            points.add("股票发行");
-        }
-        if (containsAny(lower, "private placement")) {
-            points.add("私募融资");
-        }
-        if (containsAny(lower, "convertible notes", "senior notes", "notes")) {
-            points.add("债券/可转债");
-        }
-        if (containsAny(lower, "warrants")) {
-            points.add("认股权证");
-        }
-        if (containsAny(lower, "credit facility", "loan agreement")) {
-            points.add("信贷/贷款安排");
-        }
-        if (containsAny(lower, "at-the-market", "atm offering")) {
-            points.add("ATM 增发");
+    private static boolean hasStrongDelistingSignal(String lower) {
+        if (lower == null || lower.isBlank()) {
+            return false;
         }
 
-        if (points.isEmpty()) {
-            return "融资、发债、定增或可转债相关事项";
-        }
-
-        return String.join("、", points);
-    }
-
-    private static String buildContractFocus(String lower) {
-        List<String> points = new ArrayList<>();
-
-        if (containsAny(lower, "contract", "agreement")) {
-            points.add("合同/协议");
-        }
-        if (containsAny(lower, "award", "awarded")) {
-            points.add("订单/授标");
-        }
-        if (containsAny(lower, "customer")) {
-            points.add("客户");
-        }
-        if (containsAny(lower, "purchase order")) {
-            points.add("采购订单");
-        }
-        if (containsAny(lower, "strategic partnership", "partnership")) {
-            points.add("战略合作");
-        }
-        if (containsAny(lower, "supply agreement")) {
-            points.add("供应协议");
-        }
-
-        if (points.isEmpty()) {
-            return "重大协议、客户、订单或战略合作";
-        }
-
-        return String.join("、", points);
-    }
-
-    private static String buildMAFocus(String lower) {
-        List<String> points = new ArrayList<>();
-
-        if (containsAny(lower, "acquisition")) {
-            points.add("收购");
-        }
-        if (containsAny(lower, "merger")) {
-            points.add("合并");
-        }
-        if (containsAny(lower, "asset sale", "divestiture")) {
-            points.add("资产出售");
-        }
-        if (containsAny(lower, "business combination")) {
-            points.add("业务合并");
-        }
-        if (containsAny(lower, "closing")) {
-            points.add("交易完成");
-        }
-
-        if (points.isEmpty()) {
-            return "并购、合并或资产交易";
-        }
-
-        return String.join("、", points);
-    }
-
-    private static String buildManagementFocus(String lower) {
-        List<String> points = new ArrayList<>();
-
-        if (containsAny(lower, "chief executive officer", "ceo")) {
-            points.add("CEO");
-        }
-        if (containsAny(lower, "chief financial officer", "cfo")) {
-            points.add("CFO");
-        }
-        if (containsAny(lower, "resignation", "resigned", "departure")) {
-            points.add("离职/辞任");
-        }
-        if (containsAny(lower, "appointed", "appointment")) {
-            points.add("任命");
-        }
-        if (containsAny(lower, "terminated", "termination")) {
-            points.add("解聘/终止");
-        }
-
-        if (points.isEmpty()) {
-            return "核心管理层变动";
-        }
-
-        return String.join("、", points);
-    }
-
-    private static String buildRiskFocus(String lower) {
-        List<String> points = new ArrayList<>();
-
-        if (containsAny(lower, "bankruptcy", "chapter 11", "chapter 7")) {
-            points.add("破产/重组");
-        }
-        if (containsAny(lower, "delisting", "nasdaq notice", "nyse notice")) {
-            points.add("退市风险");
-        }
-        if (containsAny(lower, "going concern")) {
-            points.add("持续经营风险");
-        }
-
-        if (points.isEmpty()) {
-            return "退市、破产、重组或持续经营风险";
-        }
-
-        return String.join("、", points);
-    }
-
-    private static String buildLegalOrAccountingFocus(String lower) {
-        List<String> points = new ArrayList<>();
-
-        if (containsAny(lower, "impairment")) {
-            points.add("资产减值");
-        }
-        if (containsAny(lower, "material weakness")) {
-            points.add("内控重大缺陷");
-        }
-        if (containsAny(lower, "restatement", "non-reliance")) {
-            points.add("财报重述/不可依赖");
-        }
-        if (containsAny(lower, "investigation", "subpoena")) {
-            points.add("监管调查");
-        }
-        if (containsAny(lower, "litigation", "lawsuit", "settlement")) {
-            points.add("诉讼/和解");
-        }
-
-        if (points.isEmpty()) {
-            return "财务、监管或诉讼风险";
-        }
-
-        return String.join("、", points);
-    }
-
-    private static String buildGeneralFocus(String lower) {
-        List<String> points = new ArrayList<>();
-
-        if (containsAny(lower, "exhibit 99.1")) {
-            points.add("新闻稿/投资者材料");
-        }
-        if (containsAny(lower, "investor presentation")) {
-            points.add("投资者演示材料");
-        }
-        if (containsAny(lower, "business update")) {
-            points.add("经营更新");
-        }
-        if (containsAny(lower, "strategic")) {
-            points.add("战略事项");
-        }
-        if (containsAny(lower, "guidance", "outlook")) {
-            points.add("指引/展望");
-        }
-
-        if (points.isEmpty()) {
-            return "经营更新或投资者材料";
-        }
-
-        return String.join("、", points);
+        return lower.contains("notice of delisting")
+                || lower.contains("delisting determination")
+                || lower.contains("nasdaq deficiency notice")
+                || lower.contains("nyse deficiency notice")
+                || lower.contains("non-compliance with the continued listing")
+                || lower.contains("not in compliance with the continued listing")
+                || lower.contains("minimum bid price requirement")
+                || lower.contains("continued listing standards");
     }
 
     private static List<String> extract8KItems(String text) {
@@ -705,7 +497,7 @@ public class Event8KBot {
         msg.append("\n");
 
         for (Map.Entry<String, List<Event8KEntry>> tickerEntry : alertsByTicker.entrySet()) {
-            msg.append(tickerEntry.getKey()).append("\n\n");
+            msg.append("**").append(tickerEntry.getKey()).append("**").append("\n\n");
 
             for (Event8KEntry entry : tickerEntry.getValue()) {
                 msg.append(entry.level)
@@ -714,9 +506,7 @@ public class Event8KBot {
                         .append(br);
 
                 msg.append("公司：").append(safeText(entry.companyName, entry.ticker)).append(br);
-                msg.append("披露日期：").append(formatDate(entry.filingDate)).append(br);
-                msg.append("重点：").append(safeText(entry.focus, "N/A")).append(br);
-                msg.append("判断：").append(safeText(entry.judgement, "N/A")).append("\n\n");
+                msg.append("披露日期：").append(formatDate(entry.filingDate)).append("\n\n");
             }
         }
 
