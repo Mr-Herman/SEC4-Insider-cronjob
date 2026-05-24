@@ -1074,6 +1074,11 @@ public class StockInsiderBot {
 
         String code = extractText(transaction, "transactionCoding.transactionCode", "");
 
+        if ("F".equalsIgnoreCase(code)) {
+            logDebug("Skipping transaction: code=F tax withholding / payment of tax liability");
+            return null;
+        }
+
         if (!"P".equalsIgnoreCase(code) && !"S".equalsIgnoreCase(code)) {
             logDebug("Skipping transaction: code=" + code + " (not P/S)");
             return null;
@@ -1098,7 +1103,8 @@ public class StockInsiderBot {
         String type = "P".equalsIgnoreCase(code) ? "BUY" : "SELL";
 
         if ("SELL".equals(type) && isTaxWithholdingSale(transaction, documentRoot)) {
-            logDebug("Skipping SELL transaction: tax withholding / sell-to-cover detected. amount=" + amount);
+            logDebug("Skipping SELL transaction: tax withholding / sell-to-cover detected. owner="
+                    + ownerName + " amount=" + amount);
             return null;
         }
 
@@ -1142,10 +1148,15 @@ public class StockInsiderBot {
         String txText = collectAllText(transaction).toLowerCase(Locale.ROOT);
 
         if (containsTaxWithholdingKeyword(txText)) {
+            logDebug("Tax withholding keyword found in transaction text: " + truncateText(txText, 300));
             return true;
         }
 
         Set<String> footnoteIds = collectFootnoteIds(transaction);
+        if (!footnoteIds.isEmpty()) {
+            logDebug("SELL footnote ids: " + String.join(",", footnoteIds));
+        }
+
         if (footnoteIds.isEmpty()) {
             return false;
         }
@@ -1153,7 +1164,12 @@ public class StockInsiderBot {
         Map<String, String> footnotes = collectFootnotes(documentRoot);
         for (String id : footnoteIds) {
             String text = footnotes.get(id);
+            if (text != null) {
+                logDebug("SELL footnote " + id + ": " + truncateText(text, 300));
+            }
+
             if (text != null && containsTaxWithholdingKeyword(text.toLowerCase(Locale.ROOT))) {
+                logDebug("Tax withholding keyword found in footnote " + id + ": " + truncateText(text, 300));
                 return true;
             }
         }
@@ -1170,27 +1186,44 @@ public class StockInsiderBot {
 
         return lower.contains("tax withholding")
                 || lower.contains("tax liability")
+                || lower.contains("tax liabilities")
                 || lower.contains("tax obligation")
                 || lower.contains("tax obligations")
-                || lower.contains("withheld")
-                || lower.contains("withholding")
+                || lower.contains("withholding securities")
+                || lower.contains("withholding of securities")
+                || lower.contains("withheld securities")
+                || lower.contains("shares withheld")
+                || lower.contains("shares were withheld")
+                || lower.contains("shares are withheld")
+                || lower.contains("withheld to satisfy")
+                || lower.contains("withheld for taxes")
+                || lower.contains("withheld to cover")
+                || lower.contains("withheld in payment")
+                || lower.contains("payment of tax")
+                || lower.contains("payment of taxes")
+                || lower.contains("payment of tax liability")
+                || lower.contains("payment of tax liabilities")
+                || lower.contains("payment of withholding")
                 || lower.contains("sell to cover")
                 || lower.contains("sold to cover")
                 || lower.contains("sale to cover")
                 || lower.contains("shares sold to cover")
+                || lower.contains("automatic sale")
+                || lower.contains("automatic sell")
                 || lower.contains("net settlement")
                 || lower.contains("net settled")
-                || lower.contains("payment of tax")
-                || lower.contains("payment of taxes")
-                || lower.contains("pay tax")
-                || lower.contains("pay taxes")
+                || lower.contains("net share settlement")
+                || lower.contains("net exercise")
                 || lower.contains("satisfy tax")
                 || lower.contains("satisfy taxes")
                 || lower.contains("satisfy withholding")
+                || lower.contains("satisfy statutory")
                 || lower.contains("cover tax")
                 || lower.contains("cover taxes")
                 || lower.contains("required tax")
                 || lower.contains("statutory tax")
+                || lower.contains("statutory withholding")
+                || lower.contains("withholding obligations")
                 || lower.contains("tax withholding obligations");
     }
 
@@ -1328,6 +1361,19 @@ public class StockInsiderBot {
                 collectAllTextRecursive(field.getValue(), sb);
             }
         }
+    }
+
+    private static String truncateText(String text, int maxLength) {
+        if (text == null) {
+            return "";
+        }
+
+        String clean = text.replaceAll("\\s+", " ").trim();
+        if (clean.length() <= maxLength) {
+            return clean;
+        }
+
+        return clean.substring(0, maxLength) + "...";
     }
 
     private static String extractText(JsonNode root, String path, String fallback) {
@@ -1528,7 +1574,6 @@ public class StockInsiderBot {
     private static boolean sendDingTalkWebhook(String webhookUrl, String secret, String title, String message) {
         try {
             String signedUrl = buildDingTalkUrl(webhookUrl, secret);
-
             String markdown = "### 🔔 " + title + "\n\n" + message;
 
             String payload = "{\"msgtype\":\"markdown\",\"markdown\":{\"title\":\""
