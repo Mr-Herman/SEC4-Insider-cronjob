@@ -311,7 +311,6 @@ public class StockInsiderBot {
         }
     }
 
-    // ==================== 通知构建 ====================
     private static String buildGroupedNotification(
             Map<String, List<AlertEntry>> alertsByTicker,
             String indexDate,
@@ -320,49 +319,49 @@ public class StockInsiderBot {
             int processedCount,
             int failedCount,
             List<String> unmappedTickers) {
-    
+
         final String BR = "  \n";
-    
+
         int tickerCount = alertsByTicker.size();
         int tradeCount = alertsByTicker.values().stream().mapToInt(List::size).sum();
         double totalAmount = alertsByTicker.values().stream()
                 .flatMap(List::stream)
                 .mapToDouble(e -> e.amount)
                 .sum();
-    
+
         StringBuilder msg = new StringBuilder();
-    
+
         msg.append("📅 报告日期：").append(formatDate(indexDate)).append(BR);
         msg.append("🔎 扫描范围：最近 ").append(lookbackDays).append(" 天").append(BR);
         msg.append("💰 提醒规则：买入不限金额，卖出 ≥ ").append(formatAmount(minimumUsd)).append(BR);
         msg.append("📄 已处理 Form 4：").append(processedCount).append(" 份").append(BR);
-    
+
         if (failedCount > 0) {
             msg.append("⚠️ 处理失败：").append(failedCount).append(" 份").append(BR);
         }
-    
+
         if (unmappedTickers != null && !unmappedTickers.isEmpty()) {
             msg.append("⚠️ 未映射股票：").append(String.join(", ", unmappedTickers)).append(BR);
         }
-    
+
         msg.append("📊 命中结果：")
                 .append(tickerCount).append(" 个股票，")
                 .append(tradeCount).append(" 笔交易，合计 ")
                 .append(formatAmount(totalAmount))
                 .append("\n\n");
-    
+
         for (Map.Entry<String, List<AlertEntry>> entry : alertsByTicker.entrySet()) {
             String ticker = entry.getKey();
             List<AlertEntry> entries = new ArrayList<>(entry.getValue());
-    
+
             entries.sort(Comparator
                     .comparing((AlertEntry e) -> "BUY".equals(e.type) ? 0 : 1)
                     .thenComparing((AlertEntry e) -> -e.amount));
-    
+
             long buyCount = entries.stream().filter(e -> "BUY".equals(e.type)).count();
             long sellCount = entries.stream().filter(e -> "SELL".equals(e.type)).count();
             double tickerAmount = entries.stream().mapToDouble(e -> e.amount).sum();
-    
+
             msg.append("## ").append(ticker).append("\n");
             msg.append("合计：")
                     .append(entries.size()).append(" 笔，")
@@ -370,49 +369,49 @@ public class StockInsiderBot {
                     .append(" ｜ 买入 ").append(buyCount)
                     .append(" ｜ 卖出 ").append(sellCount)
                     .append(BR);
-    
+
             for (AlertEntry e : entries) {
                 boolean isBuy = "BUY".equals(e.type);
-    
+
                 String actionText = isBuy ? "买入" : "卖出";
                 String actionIcon = isBuy ? "🔴" : "🟢";
                 String date = e.transactionDate == null || e.transactionDate.isBlank()
                         ? "N/A"
                         : formatDate(e.transactionDate);
-    
+
                 String sharesStr = formatNumber(e.shares);
                 String amountStr = formatAmount(e.amount);
                 String priceStr = "$" + String.format("%,.2f", e.price);
                 String ownedAfter = e.sharesOwnedAfter > 0 ? formatNumber(e.sharesOwnedAfter) : "N/A";
                 String position = translatePosition(e.position);
-    
+
                 msg.append(actionIcon)
                         .append(" **").append(actionText)
                         .append(" ").append(amountStr)
                         .append("**");
-    
+
                 if (e.is10b51) {
                     msg.append(" `10b5-1计划交易`");
                 }
-    
+
                 msg.append(BR);
                 msg.append("日期：").append(date).append(BR);
                 msg.append("人员：").append(safeText(e.ownerName, "Unknown Owner")).append(BR);
                 msg.append("职位：").append(position).append(BR);
                 msg.append("数量：").append(sharesStr).append(" 股 @ ").append(priceStr).append(BR);
                 msg.append("交易后持股：").append(ownedAfter).append(BR);
-    
+
                 if (e.security != null && !e.security.isBlank() && !"stock".equalsIgnoreCase(e.security)) {
                     msg.append("证券类型：").append(e.security).append(BR);
                 }
             }
         }
-    
-        msg.append("说明：P = Purchase 买入，S = Sale 卖出；10b5-1 表示预设交易计划。");
-    
+
+        msg.append("说明：P = Purchase 买入，S = Sale 卖出；已过滤交税代扣/自动卖股缴税类交易；10b5-1 表示预设交易计划。");
+
         return msg.toString().trim();
     }
-    
+
     private static String buildNoAlertNotification(
             String[] tickers,
             List<String> unmappedTickers,
@@ -514,8 +513,6 @@ public class StockInsiderBot {
         return msg.toString().trim();
     }
 
-    // ==================== 格式化 ====================
-
     private static String translatePosition(String eng) {
         if (eng == null || eng.isBlank()) {
             return "未知职位";
@@ -589,8 +586,6 @@ public class StockInsiderBot {
         }
         return value.trim();
     }
-
-    // ==================== 参数处理 ====================
 
     private static Map<String, String> parseOptions(String[] args) {
         Map<String, String> options = new HashMap<>();
@@ -673,8 +668,6 @@ public class StockInsiderBot {
                 .distinct()
                 .toArray(String[]::new);
     }
-
-    // ==================== SEC 数据下载和索引解析 ====================
 
     private static Map<String, String> downloadTickerMapping() {
         Map<String, String> map = new HashMap<>();
@@ -939,8 +932,6 @@ public class StockInsiderBot {
         }
     }
 
-    // ==================== Form 4 解析 ====================
-
     private static Map<String, List<AlertEntry>> parseForm4(
             String xml,
             long minimumUsd,
@@ -1001,13 +992,13 @@ public class StockInsiderBot {
             if (!nonTrans.isMissingNode()) {
                 if (nonTrans.isArray()) {
                     for (JsonNode tx : nonTrans) {
-                        AlertEntry entry = processTransaction(tx, ownerName, position, minimumUsd);
+                        AlertEntry entry = processTransaction(tx, root, ownerName, position, minimumUsd);
                         if (entry != null) {
                             alerts.computeIfAbsent(ticker, k -> new ArrayList<>()).add(entry);
                         }
                     }
                 } else if (nonTrans.isObject()) {
-                    AlertEntry entry = processTransaction(nonTrans, ownerName, position, minimumUsd);
+                    AlertEntry entry = processTransaction(nonTrans, root, ownerName, position, minimumUsd);
                     if (entry != null) {
                         alerts.computeIfAbsent(ticker, k -> new ArrayList<>()).add(entry);
                     }
@@ -1074,55 +1065,65 @@ public class StockInsiderBot {
         return "Unknown Position";
     }
 
-    private static AlertEntry processTransaction(JsonNode transaction, String ownerName, String position, long minimumUsd) {
+    private static AlertEntry processTransaction(
+            JsonNode transaction,
+            JsonNode documentRoot,
+            String ownerName,
+            String position,
+            long minimumUsd) {
+
         String code = extractText(transaction, "transactionCoding.transactionCode", "");
-    
+
         if (!"P".equalsIgnoreCase(code) && !"S".equalsIgnoreCase(code)) {
             logDebug("Skipping transaction: code=" + code + " (not P/S)");
             return null;
         }
-    
+
         long shares = extractLong(transaction, "transactionAmounts.transactionShares");
         if (shares <= 0) {
             shares = extractLong(transaction, "transactionShares");
         }
-    
+
         double price = extractDouble(transaction, "transactionAmounts.transactionPricePerShare");
         if (price <= 0) {
             price = extractDouble(transaction, "transactionPricePerShare");
         }
-    
+
         if (shares <= 0 || price <= 0) {
             logDebug("Skipping transaction: code=" + code + " shares=" + shares + " price=" + price);
             return null;
         }
-    
+
         double amount = shares * price;
         String type = "P".equalsIgnoreCase(code) ? "BUY" : "SELL";
-    
-        // 买入不限制金额；卖出才按 minimumUsd 阈值过滤
+
+        if ("SELL".equals(type) && isTaxWithholdingSale(transaction, documentRoot)) {
+            logDebug("Skipping SELL transaction: tax withholding / sell-to-cover detected. amount=" + amount);
+            return null;
+        }
+
         if ("SELL".equals(type) && amount < minimumUsd) {
             logDebug("Skipping SELL transaction: amount=" + amount + " < threshold=" + minimumUsd);
             return null;
         }
-    
+
         String security = extractText(transaction, "securityTitle", "stock");
         String is10b51 = extractText(transaction, "transactionCoding.is10b51Transaction", "false");
         boolean isPlan = "true".equalsIgnoreCase(is10b51) || "1".equals(is10b51);
-    
+
         String transactionDate = extractText(transaction, "transactionDate", "");
         if (!transactionDate.isEmpty() && transactionDate.length() >= 10) {
             transactionDate = transactionDate.substring(0, 10);
         }
-    
+
         long sharesOwnedAfter = extractLong(transaction, "postTransactionAmounts.sharesOwnedFollowingTransaction");
         if (sharesOwnedAfter <= 0) {
             sharesOwnedAfter = extractLong(transaction, "sharesOwnedFollowingTransaction");
         }
-    
+
         logDebug("Creating alert: " + ownerName + " " + type + " " + shares + " shares at " + price
                 + " amount=" + amount + " date=" + transactionDate + " ownedAfter=" + sharesOwnedAfter);
-    
+
         return new AlertEntry(
                 ownerName,
                 position,
@@ -1137,7 +1138,197 @@ public class StockInsiderBot {
         );
     }
 
-    // ==================== XML / JSON 节点处理 ====================
+    private static boolean isTaxWithholdingSale(JsonNode transaction, JsonNode documentRoot) {
+        String txText = collectAllText(transaction).toLowerCase(Locale.ROOT);
+
+        if (containsTaxWithholdingKeyword(txText)) {
+            return true;
+        }
+
+        Set<String> footnoteIds = collectFootnoteIds(transaction);
+        if (footnoteIds.isEmpty()) {
+            return false;
+        }
+
+        Map<String, String> footnotes = collectFootnotes(documentRoot);
+        for (String id : footnoteIds) {
+            String text = footnotes.get(id);
+            if (text != null && containsTaxWithholdingKeyword(text.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean containsTaxWithholdingKeyword(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+
+        String lower = text.toLowerCase(Locale.ROOT);
+
+        return lower.contains("tax withholding")
+                || lower.contains("tax liability")
+                || lower.contains("tax obligation")
+                || lower.contains("tax obligations")
+                || lower.contains("withheld")
+                || lower.contains("withholding")
+                || lower.contains("sell to cover")
+                || lower.contains("sold to cover")
+                || lower.contains("sale to cover")
+                || lower.contains("shares sold to cover")
+                || lower.contains("net settlement")
+                || lower.contains("net settled")
+                || lower.contains("payment of tax")
+                || lower.contains("payment of taxes")
+                || lower.contains("pay tax")
+                || lower.contains("pay taxes")
+                || lower.contains("satisfy tax")
+                || lower.contains("satisfy taxes")
+                || lower.contains("satisfy withholding")
+                || lower.contains("cover tax")
+                || lower.contains("cover taxes")
+                || lower.contains("required tax")
+                || lower.contains("statutory tax")
+                || lower.contains("tax withholding obligations");
+    }
+
+    private static Set<String> collectFootnoteIds(JsonNode node) {
+        Set<String> ids = new LinkedHashSet<>();
+        collectFootnoteIdsRecursive(node, ids);
+        return ids;
+    }
+
+    private static void collectFootnoteIdsRecursive(JsonNode node, Set<String> ids) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return;
+        }
+
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                String name = field.getKey();
+                JsonNode value = field.getValue();
+
+                if ("footnoteId".equalsIgnoreCase(name)) {
+                    String id = extractFootnoteIdValue(value);
+                    if (!id.isBlank()) {
+                        ids.add(id);
+                    }
+
+                    if (value.isArray()) {
+                        for (JsonNode item : value) {
+                            id = extractFootnoteIdValue(item);
+                            if (!id.isBlank()) {
+                                ids.add(id);
+                            }
+                        }
+                    }
+                }
+
+                collectFootnoteIdsRecursive(value, ids);
+            }
+        } else if (node.isArray()) {
+            for (JsonNode item : node) {
+                collectFootnoteIdsRecursive(item, ids);
+            }
+        }
+    }
+
+    private static String extractFootnoteIdValue(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return "";
+        }
+
+        if (node.isTextual()) {
+            return node.asText("").trim();
+        }
+
+        if (node.isObject()) {
+            String id = firstNonBlank(
+                    node.path("id").asText(""),
+                    node.path("footnoteId").asText(""),
+                    node.path("value").asText(""),
+                    node.path("").asText("")
+            );
+
+            return id == null ? "" : id.trim();
+        }
+
+        return node.asText("").trim();
+    }
+
+    private static Map<String, String> collectFootnotes(JsonNode documentRoot) {
+        Map<String, String> result = new HashMap<>();
+
+        JsonNode footnotesNode = documentRoot.path("footnotes").path("footnote");
+        if (footnotesNode.isMissingNode()) {
+            footnotesNode = documentRoot.path("ownershipDocument").path("footnotes").path("footnote");
+        }
+
+        if (footnotesNode.isArray()) {
+            for (JsonNode footnote : footnotesNode) {
+                addFootnote(result, footnote);
+            }
+        } else if (footnotesNode.isObject()) {
+            addFootnote(result, footnotesNode);
+        }
+
+        return result;
+    }
+
+    private static void addFootnote(Map<String, String> result, JsonNode footnote) {
+        String id = firstNonBlank(
+                footnote.path("id").asText(""),
+                footnote.path("footnoteId").asText(""),
+                footnote.path("footnoteId").path("id").asText(""),
+                footnote.path("value").asText(""),
+                footnote.path("").asText("")
+        );
+
+        if (id == null || id.isBlank()) {
+            return;
+        }
+
+        String text = collectAllText(footnote);
+        if (!text.isBlank()) {
+            result.put(id.trim(), text.trim());
+        }
+    }
+
+    private static String collectAllText(JsonNode node) {
+        StringBuilder sb = new StringBuilder();
+        collectAllTextRecursive(node, sb);
+        return sb.toString();
+    }
+
+    private static void collectAllTextRecursive(JsonNode node, StringBuilder sb) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return;
+        }
+
+        if (node.isTextual() || node.isNumber() || node.isBoolean()) {
+            sb.append(node.asText()).append(' ');
+            return;
+        }
+
+        if (node.isArray()) {
+            for (JsonNode item : node) {
+                collectAllTextRecursive(item, sb);
+            }
+            return;
+        }
+
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                collectAllTextRecursive(field.getValue(), sb);
+            }
+        }
+    }
 
     private static String extractText(JsonNode root, String path, String fallback) {
         JsonNode node = nodeAt(root, path);
@@ -1305,8 +1496,6 @@ public class StockInsiderBot {
         return cleanXml.trim();
     }
 
-    // ==================== 通知发送 ====================
-
     private static boolean sendNotification(String message) {
         String dingTalkUrl = System.getenv("DING_WEBHOOK_URL");
         if (dingTalkUrl != null && !dingTalkUrl.isBlank()) {
@@ -1339,13 +1528,12 @@ public class StockInsiderBot {
     private static boolean sendDingTalkWebhook(String webhookUrl, String secret, String title, String message) {
         try {
             String signedUrl = buildDingTalkUrl(webhookUrl, secret);
-    
-            // 钉钉标题只显示一次，并在标题前加 🔔
+
             String markdown = "### 🔔 " + title + "\n\n" + message;
-    
+
             String payload = "{\"msgtype\":\"markdown\",\"markdown\":{\"title\":\""
                     + escapeJson(title) + "\",\"text\":\"" + escapeJson(markdown) + "\"}}";
-    
+
             HttpClient client = HttpClient.newBuilder().connectTimeout(HTTP_TIMEOUT).build();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(signedUrl))
@@ -1353,25 +1541,25 @@ public class StockInsiderBot {
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(payload))
                     .build();
-    
+
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             String body = response.body() == null ? "" : response.body();
-    
+
             boolean success = response.statusCode() >= 200
                     && response.statusCode() < 300
                     && body.replace(" ", "").contains("\"errcode\":0");
-    
+
             if (!success) {
                 System.err.println("Warning: DingTalk notification failed. status="
                         + response.statusCode() + " body=" + body);
             }
-    
+
             return success;
         } catch (Exception e) {
             System.err.println("Warning: failed to send DingTalk notification: " + e.getMessage());
             return false;
         }
-    }    
+    }
 
     private static String buildDingTalkUrl(String webhookUrl, String secret) throws Exception {
         if (secret == null || secret.isBlank()) {
