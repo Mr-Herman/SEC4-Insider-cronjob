@@ -334,7 +334,7 @@ public class StockInsiderBot {
     
         msg.append("📅 报告日期：").append(formatDate(indexDate)).append(BR);
         msg.append("🔎 扫描范围：最近 ").append(lookbackDays).append(" 天").append(BR);
-        msg.append("💰 提醒阈值：≥ ").append(formatAmount(minimumUsd)).append(BR);
+        msg.append("💰 提醒规则：买入不限金额，卖出 ≥ ").append(formatAmount(minimumUsd)).append(BR);
         msg.append("📄 已处理 Form 4：").append(processedCount).append(" 份").append(BR);
     
         if (failedCount > 0) {
@@ -427,7 +427,7 @@ public class StockInsiderBot {
         msg.append("📭 **内部人交易扫描完成，暂无大额交易提醒**\n\n");
         msg.append("🔎 扫描股票：").append(String.join(", ", tickers)).append("\n");
         msg.append("📆 扫描范围：最近 ").append(lookbackDays).append(" 天\n");
-        msg.append("💰 提醒阈值：≥ ").append(formatAmount(minimumUsd)).append("\n");
+        msg.append("💰 提醒规则：买入不限金额，卖出 ≥ ").append(formatAmount(minimumUsd)).append("\n");
         msg.append("📄 已处理 Form 4：").append(processedCount).append(" 份\n");
 
         if (failedCount > 0) {
@@ -443,7 +443,7 @@ public class StockInsiderBot {
         if (tickersWithForm4 == null || tickersWithForm4.isEmpty()) {
             msg.append("结果：未发现相关 Form 4 披露。");
         } else {
-            msg.append("结果：发现 Form 4 披露，但没有达到阈值的公开市场买入或卖出交易。\n\n");
+            msg.append("结果：发现 Form 4 披露，但没有符合提醒规则的公开市场交易。\n\n");
             msg.append("有披露记录的股票：").append(String.join(", ", tickersWithForm4));
         }
 
@@ -461,7 +461,7 @@ public class StockInsiderBot {
         msg.append("📭 **未发现 Form 4 披露**\n\n");
         msg.append("🔎 扫描股票：").append(String.join(", ", tickers)).append("\n");
         msg.append("📆 扫描范围：最近 ").append(lookbackDays).append(" 天\n");
-        msg.append("💰 提醒阈值：≥ ").append(formatAmount(minimumUsd)).append("\n");
+        msg.append("💰 提醒规则：买入不限金额，卖出 ≥ ").append(formatAmount(minimumUsd)).append("\n");
 
         if (unmappedTickers != null && !unmappedTickers.isEmpty()) {
             msg.append("⚠️ 未映射股票：").append(String.join(", ", unmappedTickers)).append("\n");
@@ -1076,51 +1076,53 @@ public class StockInsiderBot {
 
     private static AlertEntry processTransaction(JsonNode transaction, String ownerName, String position, long minimumUsd) {
         String code = extractText(transaction, "transactionCoding.transactionCode", "");
-
+    
         if (!"P".equalsIgnoreCase(code) && !"S".equalsIgnoreCase(code)) {
             logDebug("Skipping transaction: code=" + code + " (not P/S)");
             return null;
         }
-
+    
         long shares = extractLong(transaction, "transactionAmounts.transactionShares");
         if (shares <= 0) {
             shares = extractLong(transaction, "transactionShares");
         }
-
+    
         double price = extractDouble(transaction, "transactionAmounts.transactionPricePerShare");
         if (price <= 0) {
             price = extractDouble(transaction, "transactionPricePerShare");
         }
-
+    
         if (shares <= 0 || price <= 0) {
             logDebug("Skipping transaction: code=" + code + " shares=" + shares + " price=" + price);
             return null;
         }
-
+    
         double amount = shares * price;
-        if (amount < minimumUsd) {
-            logDebug("Skipping transaction: code=" + code + " amount=" + amount + " < threshold=" + minimumUsd);
+        String type = "P".equalsIgnoreCase(code) ? "BUY" : "SELL";
+    
+        // 买入不限制金额；卖出才按 minimumUsd 阈值过滤
+        if ("SELL".equals(type) && amount < minimumUsd) {
+            logDebug("Skipping SELL transaction: amount=" + amount + " < threshold=" + minimumUsd);
             return null;
         }
-
-        String type = "P".equalsIgnoreCase(code) ? "BUY" : "SELL";
+    
         String security = extractText(transaction, "securityTitle", "stock");
         String is10b51 = extractText(transaction, "transactionCoding.is10b51Transaction", "false");
         boolean isPlan = "true".equalsIgnoreCase(is10b51) || "1".equals(is10b51);
-
+    
         String transactionDate = extractText(transaction, "transactionDate", "");
         if (!transactionDate.isEmpty() && transactionDate.length() >= 10) {
             transactionDate = transactionDate.substring(0, 10);
         }
-
+    
         long sharesOwnedAfter = extractLong(transaction, "postTransactionAmounts.sharesOwnedFollowingTransaction");
         if (sharesOwnedAfter <= 0) {
             sharesOwnedAfter = extractLong(transaction, "sharesOwnedFollowingTransaction");
         }
-
+    
         logDebug("Creating alert: " + ownerName + " " + type + " " + shares + " shares at " + price
                 + " amount=" + amount + " date=" + transactionDate + " ownedAfter=" + sharesOwnedAfter);
-
+    
         return new AlertEntry(
                 ownerName,
                 position,
