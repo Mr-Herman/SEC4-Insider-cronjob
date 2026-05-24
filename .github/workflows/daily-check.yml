@@ -15,12 +15,16 @@ on:
         description: 'Days to look back (leave blank to use secret)'
         required: false
         default: ''
+      job_type:
+        description: 'Job type: form4, form144, event8k, core, all (leave blank to use secret)'
+        required: false
+        default: ''
       update_defaults:
         description: 'Update cronjob default config? (saves provided values as secrets)'
         required: false
         default: 'false'
         type: boolean
-        
+
   schedule:
     - cron: '37 4 * * *'   # 中国时间 12:37
     # - cron: '37 1 * * *'   # 中国时间 09:37
@@ -58,6 +62,14 @@ jobs:
           value: ${{ github.event.inputs.lookback }}
           pat: ${{ secrets.PAT }}
 
+      - name: Update JOB_TYPE secret
+        if: ${{ github.event.inputs.job_type != '' }}
+        uses: gliech/create-github-secret-action@v1
+        with:
+          name: JOB_TYPE
+          value: ${{ github.event.inputs.job_type }}
+          pat: ${{ secrets.PAT }}
+
   check:
     runs-on: ubuntu-latest
     if: ${{ always() }}
@@ -67,6 +79,11 @@ jobs:
       - name: Show trigger type
         run: |
           echo "Trigger event: ${{ github.event_name }}"
+          echo "Schedule: ${{ github.event.schedule }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "UTC now: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "China now: $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S Asia/Shanghai')"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -87,14 +104,86 @@ jobs:
           DING_WEBHOOK_URL: ${{ secrets.DING_WEBHOOK_URL }}
           DING_WEBHOOK_SIGN: ${{ secrets.DING_WEBHOOK_SIGN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
           TICKERS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tickers != '' && github.event.inputs.tickers || secrets.TICKERS }}
           THRESHOLD_USD: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.threshold != '' && github.event.inputs.threshold || secrets.THRESHOLD }}
           LOOKBACK_DAYS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.lookback != '' && github.event.inputs.lookback || secrets.LOOKBACK }}
+          JOB_TYPE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.job_type != '' && github.event.inputs.job_type || secrets.JOB_TYPE }}
+
         run: |
+          JOB_TYPE="${JOB_TYPE:-core}"
+
           echo "Trigger event: ${{ github.event_name }}"
+          echo "JOB_TYPE=$JOB_TYPE"
           echo "DING_WEBHOOK_URL is set: ${{ secrets.DING_WEBHOOK_URL != '' }}"
           echo "DING_WEBHOOK_SIGN is set: ${{ secrets.DING_WEBHOOK_SIGN != '' }}"
           echo "TICKERS is set: ${{ secrets.TICKERS != '' }}"
           echo "THRESHOLD is set: ${{ secrets.THRESHOLD != '' }}"
           echo "LOOKBACK is set: ${{ secrets.LOOKBACK != '' }}"
-          mvn compile exec:java
+          echo "JOB_TYPE secret is set: ${{ secrets.JOB_TYPE != '' }}"
+
+          if [ -z "$TICKERS" ]; then
+            echo "TICKERS is empty. Please set repository secret TICKERS or pass workflow input tickers."
+            exit 1
+          fi
+
+          if [ -z "$LOOKBACK_DAYS" ]; then
+            echo "LOOKBACK_DAYS is empty. Please set repository secret LOOKBACK or pass workflow input lookback."
+            exit 1
+          fi
+
+          if [ "$JOB_TYPE" = "form4" ] || [ "$JOB_TYPE" = "core" ] || [ "$JOB_TYPE" = "all" ]; then
+            if [ -z "$THRESHOLD_USD" ]; then
+              echo "THRESHOLD_USD is empty. Please set repository secret THRESHOLD or pass workflow input threshold."
+              exit 1
+            fi
+          fi
+
+          if [ -z "$DING_WEBHOOK_URL" ] && [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "Both DING_WEBHOOK_URL and DISCORD_WEBHOOK_URL are empty. Please configure at least one webhook."
+            exit 1
+          fi
+
+          if [ "$JOB_TYPE" = "form4" ]; then
+            echo "Running Form 4 insider bot only..."
+            mvn -Dexec.mainClass=com.example.StockInsiderBot compile exec:java
+
+          elif [ "$JOB_TYPE" = "form144" ]; then
+            echo "Running Form 144 planned sale bot only..."
+            mvn compile
+            java -cp target/classes com.example.Form144Bot
+
+          elif [ "$JOB_TYPE" = "event8k" ]; then
+            echo "Running 8-K event bot only..."
+            mvn compile
+            java -cp target/classes com.example.Event8KBot
+
+          elif [ "$JOB_TYPE" = "core" ]; then
+            echo "Running Form 4 insider bot..."
+            mvn -Dexec.mainClass=com.example.StockInsiderBot compile exec:java
+
+            echo "Running Form 144 planned sale bot..."
+            mvn compile
+            java -cp target/classes com.example.Form144Bot
+
+            echo "Running 8-K event bot..."
+            mvn compile
+            java -cp target/classes com.example.Event8KBot
+
+          elif [ "$JOB_TYPE" = "all" ]; then
+            echo "Running Form 4 insider bot..."
+            mvn -Dexec.mainClass=com.example.StockInsiderBot compile exec:java
+
+            echo "Running Form 144 planned sale bot..."
+            mvn compile
+            java -cp target/classes com.example.Form144Bot
+
+            echo "Running 8-K event bot..."
+            mvn compile
+            java -cp target/classes com.example.Event8KBot
+
+          else
+            echo "Invalid JOB_TYPE: $JOB_TYPE"
+            echo "Allowed values: form4, form144, event8k, core, all"
+            exit 1
+          fi
