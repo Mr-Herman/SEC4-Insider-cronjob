@@ -1,6 +1,6 @@
 name: Daily Insider Check
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       tickers:
@@ -18,19 +18,36 @@ on:
       update_defaults:
         description: 'Update cronjob default config? (saves provided values as secrets)'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
+  # 临时保留 push，提交后可以立刻验证 workflow 是否正常触发。
+  # schedule 验证成功后，可以删除 push 这一段。
+  push:
+    branches:
+      - master
+
   schedule:
-    - cron: '37 1 * * *'   # 中国时间 09:37
-    - cron: '43 12 * * *'  # 中国时间 20:43
+    - cron: '*/5 * * * *'
 
 jobs:
   update-secrets:
+    name: Update default secrets
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.update_defaults == 'true' }}
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate PAT
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "PAT is empty. Cannot update repository secrets."
+            exit 1
+          fi
+        env:
+          PAT: ${{ secrets.PAT }}
 
       - name: Update TICKERS secret
         if: ${{ github.event.inputs.tickers != '' }}
@@ -57,14 +74,65 @@ jobs:
           pat: ${{ secrets.PAT }}
 
   check:
+    name: Run daily insider check
     runs-on: ubuntu-latest
-    if: ${{ always() }}
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 20
 
-      - name: Show trigger type
+    env:
+      DING_WEBHOOK_URL: ${{ secrets.DING_WEBHOOK_URL }}
+      DING_WEBHOOK_SIGN: ${{ secrets.DING_WEBHOOK_SIGN }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      TICKERS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tickers != '' && github.event.inputs.tickers || secrets.TICKERS }}
+      THRESHOLD_USD: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.threshold != '' && github.event.inputs.threshold || secrets.THRESHOLD }}
+      LOOKBACK_DAYS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.lookback != '' && github.event.inputs.lookback || secrets.LOOKBACK }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show trigger info
         run: |
-          echo "Trigger event: ${{ github.event_name }}"
+          echo "event_name=${{ github.event_name }}"
+          echo "schedule=${{ github.event.schedule }}"
+          echo "ref=${{ github.ref }}"
+          echo "sha=${{ github.sha }}"
+          echo "actor=${{ github.actor }}"
+          echo "repository=${{ github.repository }}"
+          echo "workflow=${{ github.workflow }}"
+          echo "run_id=${{ github.run_id }}"
+          echo "run_number=${{ github.run_number }}"
+          echo "utc_now=$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "local_now=$(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M:%S Asia/Shanghai')"
+
+      - name: Validate environment variables
+        run: |
+          echo "DING_WEBHOOK_URL length: ${#DING_WEBHOOK_URL}"
+          echo "DING_WEBHOOK_SIGN length: ${#DING_WEBHOOK_SIGN}"
+          echo "DISCORD_WEBHOOK_URL length: ${#DISCORD_WEBHOOK_URL}"
+          echo "TICKERS=$TICKERS"
+          echo "THRESHOLD_USD=$THRESHOLD_USD"
+          echo "LOOKBACK_DAYS=$LOOKBACK_DAYS"
+
+          if [ -z "$TICKERS" ]; then
+            echo "TICKERS is empty. Please set repository secret TICKERS or pass workflow input tickers."
+            exit 1
+          fi
+
+          if [ -z "$THRESHOLD_USD" ]; then
+            echo "THRESHOLD_USD is empty. Please set repository secret THRESHOLD or pass workflow input threshold."
+            exit 1
+          fi
+
+          if [ -z "$LOOKBACK_DAYS" ]; then
+            echo "LOOKBACK_DAYS is empty. Please set repository secret LOOKBACK or pass workflow input lookback."
+            exit 1
+          fi
+
+          if [ -z "$DING_WEBHOOK_URL" ] && [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "Both DING_WEBHOOK_URL and DISCORD_WEBHOOK_URL are empty. Please configure at least one webhook."
+            exit 1
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -81,18 +149,7 @@ jobs:
             ${{ runner.os }}-maven-
 
       - name: Run bot
-        env:
-          DING_WEBHOOK_URL: ${{ secrets.DING_WEBHOOK_URL }}
-          DING_WEBHOOK_SIGN: ${{ secrets.DING_WEBHOOK_SIGN }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          TICKERS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tickers != '' && github.event.inputs.tickers || secrets.TICKERS }}
-          THRESHOLD_USD: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.threshold != '' && github.event.inputs.threshold || secrets.THRESHOLD }}
-          LOOKBACK_DAYS: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.lookback != '' && github.event.inputs.lookback || secrets.LOOKBACK }}
         run: |
-          echo "Trigger event: ${{ github.event_name }}"
-          echo "DING_WEBHOOK_URL is set: ${{ secrets.DING_WEBHOOK_URL != '' }}"
-          echo "DING_WEBHOOK_SIGN is set: ${{ secrets.DING_WEBHOOK_SIGN != '' }}"
-          echo "TICKERS is set: ${{ secrets.TICKERS != '' }}"
-          echo "THRESHOLD is set: ${{ secrets.THRESHOLD != '' }}"
-          echo "LOOKBACK is set: ${{ secrets.LOOKBACK != '' }}"
-          mvn compile exec:java
+          echo "Schedule trigger test passed. Skip Java bot for now."
+          # mvn compile exec:java
+          
