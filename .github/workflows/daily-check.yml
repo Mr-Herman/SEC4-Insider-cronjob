@@ -146,18 +146,18 @@ jobs:
 
           if [ "$JOB_TYPE" = "form4" ]; then
             echo "Running Form 4 insider bot only..."
-            mvn compile exec:java -Dexec.mainClass=com.example.StockInsiderBot
+            mvn -Dexec.mainClass=com.example.StockInsiderBot compile exec:java
 
           elif [ "$JOB_TYPE" = "schedule13" ]; then
             echo "Running Schedule 13D/13G bot only..."
-            mvn compile exec:java -Dexec.mainClass=com.example.Schedule13Bot
+            mvn -Dexec.mainClass=com.example.Schedule13Bot compile exec:java
 
           elif [ "$JOB_TYPE" = "all" ]; then
             echo "Running Form 4 insider bot..."
-            mvn compile exec:java -Dexec.mainClass=com.example.StockInsiderBot
+            mvn -Dexec.mainClass=com.example.StockInsiderBot compile exec:java
 
             echo "Running Schedule 13D/13G bot..."
-            mvn compile exec:java -Dexec.mainClass=com.example.Schedule13Bot
+            mvn -Dexec.mainClass=com.example.Schedule13Bot compile exec:java
 
           else
             echo "Invalid JOB_TYPE: $JOB_TYPE"
